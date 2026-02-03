@@ -1,3 +1,8 @@
+from src.optimizer import optimize_weights
+from src.backtest import run_backtest
+from src.format_allocations import format_allocations
+
+
 import pandas as pd
 from fredapi import Fred
 import os
