@@ -1,0 +1,23 @@
+# Economic Regime Factor ETF Allocation
+
+## Overview
+This project implements a macro-driven, volatility-aware asset allocation framework designed to dynamically allocate across equity, factor, defensive, and cash sleeves. The model ingests a set of macroeconomic indicators (e.g., GDP growth, inflation, money supply, velocity, and interest-rate levels), transforms them into standardized z-scores, and aggregates them into a continuous `risk_on` score ranging from 0 (fully risk-off) to 1 (fully risk-on). Rather than relying solely on discrete economic regimes, this continuous signal allows the portfolio to scale exposure gradually as macro conditions improve or deteriorate.
+
+At each monthly rebalance, the model blends between predefined risk-on and risk-off base allocations using the current `risk_on` score, then applies inverse-volatility scaling so that higher-volatility assets (e.g., momentum ETFs) do not dominate portfolio risk relative to lower-volatility sleeves (e.g., minimum-volatility or value factors). Daily returns are generated using forward-filled monthly signals, and portfolio performance is evaluated against an equal-weight benchmark. In addition to historical backtests, the script outputs current recommended portfolio weights as of the latest trading day.
+
+---
+
+## Project Structure
+```text
+src/
+  economic_regime.py        # macro regime / risk_on construction
+  optimizer.py              # optimizes allocations and writes outputs
+  backtest.py               # backtest + performance metrics
+  format_allocations.py     # formats CSV into Excel report
+
+outputs/
+  optimal_allocations.csv
+  optimal_allocations_formatted.xlsx
+  regime_labels_expanded.csv
+  current_factor_weights.csv
+
