@@ -7,7 +7,7 @@ name = "economic-regime-factor-etf-allocation"
 version = "1.0.0"
 description = "Macro-driven, volatility-aware asset allocation framework for factor ETFs"
 readme = "README.md"
-requires-python = ">= 3.8"
+requires-python = ">= 3.9"
 
 dependencies = [
     "pandas>=2.0.0",
@@ -16,10 +16,63 @@ dependencies = [
     "yfinance>=0.2.0",
     "fredapi>=0.5.0",
     "openpyxl>=3.1.0",
+    "python-dotenv>=1.0.1",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
-    "black>=23.0.0",
 ]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.14.1",
+    "pandas-stubs>=2.2.2.240807",
+    "ruff>=0.15.2",
+    "types-python-dateutil>=2.9.0.20260124",
+]
+
+# Ruff configuration
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = [
+    "E",   # Consistent formatting
+    "W",   # less critical issues (whitespace)
+    "F",   # Actual bugs before running the code
+    "I",   # Import sorting
+    "N",   # Consistent naming
+    "UP",  # Outdated syntax that can be modernized
+    "B",   # Common bugs and anti-patterns
+    "C4",  # Improves list/dict comprehensions
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# Mypy configuration
+[tool.mypy]
+python_version = "3.9"
+strict = true                       # Strict version
+warn_return_any = true              # Catches when types leak               
+warn_unused_configs = true          # If there are mypy config settings that don't do anything
+disallow_untyped_defs = true        # Every function must have complete type hints
+disallow_any_unimported = false     # Many libraries (fredapi, yfinance) don't have type stubs. Setting this to true would make mypy error on every import from them. false allows us to use them.
+no_implicit_optional = true         # Forces you to explicitly mark None as a possibility
+warn_redundant_casts = true         # Warns about unnecessary type casts
+warn_unused_ignores = true          # Warns if you have # type: ignore comments that aren't needed
+
+[[tool.mypy.overrides]]             # Creates an exception for specific modules. Without this mypy would be on every import as the libraries listed don't ship with type annotations
+module = [
+    "fredapi.*",
+    "yfinance.*",
+    "scipy.*",
+    "openpyxl.*",
+]
+ignore_missing_imports = true
