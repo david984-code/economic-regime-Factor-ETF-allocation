@@ -14,6 +14,16 @@ uv.lock
 dist/
 build/
 *.egg-info/
+src/*.egg-info/
+
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Generated outputs
+outputs/
+*.csv
 
 # OS
 .DS_Store

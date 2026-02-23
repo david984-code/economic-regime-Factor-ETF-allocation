@@ -1,22 +1,25 @@
-import pandas as pd
-import numpy as np
-from scipy.optimize import minimize
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 
 # Load data
 import yfinance as yf
-import subprocess
-import sys
+from scipy.optimize import minimize
 
-ROOT_DIR = Path(__file__).resolve().parents[1]   # .../Economic-Regime-Asset-Allocation-With-Fred-main
+ROOT_DIR = (
+    Path(__file__).resolve().parents[1]
+)  # .../Economic-Regime-Asset-Allocation-With-Fred-main
 OUTPUTS_DIR = ROOT_DIR / "outputs"
 
 
 TICKERS = ["SPY", "GLD", "MTUM", "VLUE", "USMV", "QUAL", "IJR", "VIG"]
 START_DATE = "2010-01-01"
 END_DATE = datetime.today().strftime("%Y-%m-%d")
+
 
 # Load regimes (monthly labels)
 def load_regimes():
@@ -27,7 +30,6 @@ def load_regimes():
         )
     df = pd.read_csv(path, parse_dates=["date"], index_col="date")
     return df
-
 
 
 # Download daily prices and convert to monthly returns
@@ -47,7 +49,6 @@ def main():
     returns = monthly_px.pct_change().dropna()
     returns.index.name = "Date"
 
-
     # Add Period column
     returns["Period"] = returns.index.to_period("M")
 
@@ -55,21 +56,18 @@ def main():
     regimes = load_regimes()
     regimes["Period"] = regimes.index.to_period("M")
 
-
     # Ensure required columns exist
 
     if "cash" not in returns.columns:
-        print("⚠️ Adding synthetic 'cash' column (~5% annualized).")
-        CASH_ANNUAL_YIELD = 0.05
-        CASH_MONTHLY = (1 + CASH_ANNUAL_YIELD) ** (1/12) - 1
-        returns["cash"] = CASH_MONTHLY
-
+        print("[WARNING] Adding synthetic 'cash' column (~5% annualized).")
+        cash_annual_yield = 0.05
+        cash_monthly = (1 + cash_annual_yield) ** (1 / 12) - 1
+        returns["cash"] = cash_monthly
 
     # Define asset groups
     all_assets = [col for col in returns.columns if col not in ["Period"]]
     risky_assets = [a for a in all_assets if a not in ["cash"]]
     full_asset_list = risky_assets + ["cash"]
-
 
     # Merge datasets
     merged = pd.merge(returns, regimes, on="Period", how="inner")
@@ -109,36 +107,32 @@ def main():
             return 1e9
 
         # Small penalty so optimizer doesn't always hug max_cash boundary
-        cash_penalty = 0.05 * cash_weight   # tune 0.01–0.10 if needed
+        cash_penalty = 0.05 * cash_weight  # tune 0.01–0.10 if needed
 
         return -sharpe + cash_penalty
-
 
     # Constraints & bounds
     min_cash = 0.05
     max_cash = 0.15
 
-
-
     def get_constraints(num_assets):
         return [
-            {"type": "eq", "fun": lambda w: np.sum(w) - 1},                 # full allocation
-            {"type": "ineq", "fun": lambda w: w[-1] - min_cash},            # cash >= min_cash
-            {"type": "ineq", "fun": lambda w: max_cash - w[-1]}             # cash <= max_cash
+            {"type": "eq", "fun": lambda w: np.sum(w) - 1},  # full allocation
+            {"type": "ineq", "fun": lambda w: w[-1] - min_cash},  # cash >= min_cash
+            {"type": "ineq", "fun": lambda w: max_cash - w[-1]},  # cash <= max_cash
         ]
-
 
     # Store results
     optimal_allocations = {}
 
     # Optimization loop
     for regime in merged["regime"].unique():
-        print(f"\n🔍 Optimizing for regime: {regime}")
+        print(f"\n[OPTIMIZE] Optimizing for regime: {regime}")
         subset = merged[merged["regime"] == regime]
         subset_risky = subset[risky_assets].fillna(0)
 
         if len(subset_risky) < 2:
-            print(f"⚠️ Skipping regime {regime}: not enough data.")
+            print(f"[WARNING] Skipping regime {regime}: not enough data.")
             continue
 
         # Use risky-only mean/cov for the Sharpe objective (negative_sharpe normalizes risky weights)
@@ -149,7 +143,6 @@ def main():
         eps = 1e-6
         cov_matrix_risky = cov_matrix_risky + eps * np.eye(cov_matrix_risky.shape[0])
 
-
         n = len(full_asset_list)
 
         # Feasible init: start cash at midpoint of [min_cash, max_cash]
@@ -158,24 +151,26 @@ def main():
         init_guess[:-1] = (1 - start_cash) / (n - 1)
         init_guess[-1] = start_cash
 
-
         bounds = [(0.0, 1.0)] * len(full_asset_list)
 
         result = minimize(
             negative_sharpe,
             init_guess,
-            args=(mean_returns_risky, cov_matrix_risky,),
+            args=(
+                mean_returns_risky,
+                cov_matrix_risky,
+            ),
             method="SLSQP",
             bounds=bounds,
-            constraints=get_constraints(len(full_asset_list))
+            constraints=get_constraints(len(full_asset_list)),
         )
 
         if result.success:
             allocation = dict(zip(full_asset_list, result.x))
             optimal_allocations[regime] = allocation
-            print(f"✅ Success: {regime}")
+            print(f"[SUCCESS] Optimized: {regime}")
         else:
-            print(f"❌ Failure for {regime}: {result.message}")
+            print(f"[ERROR] Failure for {regime}: {result.message}")
 
     # Save results
     if optimal_allocations:
@@ -184,15 +179,17 @@ def main():
         OUTPUTS_DIR.mkdir(exist_ok=True)
         out_csv = OUTPUTS_DIR / "optimal_allocations.csv"
         df_opt.to_csv(out_csv)
-        print(f"✅ Saved {out_csv}")
+        print(f"[SUCCESS] Saved {out_csv}")
 
-
-        print("📄 Formatting allocations into Excel...")
-        subprocess.run([sys.executable, str(ROOT_DIR / "src" / "format_allocations.py")], check=True)
-        print("✅ Saved optimal_allocations_formatted.xlsx")
+        print("[FORMAT] Formatting allocations into Excel...")
+        subprocess.run(
+            [sys.executable, str(ROOT_DIR / "src" / "format_allocations.py")], check=True
+        )
+        print("[SUCCESS] Saved optimal_allocations_formatted.xlsx")
 
     else:
-        print("⚠️ No successful optimizations. CSV not saved.")
+        print("[WARNING] No successful optimizations. CSV not saved.")
+
 
 if __name__ == "__main__":
     main()

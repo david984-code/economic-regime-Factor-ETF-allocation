@@ -1,9 +1,10 @@
-import pandas as pd
-import numpy as np
-from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment
-from openpyxl.utils.dataframe import dataframe_to_rows
 from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 # ======================
 # PATHS
@@ -18,8 +19,8 @@ OUTPUT_XLSX = OUTPUTS_DIR / "optimal_allocations_formatted.xlsx"
 # ======================
 # SETTINGS
 # ======================
-THRESHOLD = 0.0001   # 0.01% cutoff
-PCT_DECIMALS = 2     # percentage decimals
+THRESHOLD = 0.0001  # 0.01% cutoff
+PCT_DECIMALS = 2  # percentage decimals
 
 
 def main():
@@ -27,9 +28,7 @@ def main():
     # Load data
     # ----------------------
     if not INPUT_CSV.exists():
-        raise FileNotFoundError(
-            f"Missing {INPUT_CSV}. Run `python -m src.optimizer` first."
-        )
+        raise FileNotFoundError(f"Missing {INPUT_CSV}. Run `python -m src.optimizer` first.")
 
     df = pd.read_csv(INPUT_CSV)
 
@@ -101,7 +100,7 @@ def main():
         ws.column_dimensions[col_letter].width = min(max_len + 2, 35)
 
     wb.save(OUTPUT_XLSX)
-    print(f"✅ Saved formatted Excel file: {OUTPUT_XLSX}")
+    print(f"[SUCCESS] Saved formatted Excel file: {OUTPUT_XLSX}")
 
 
 if __name__ == "__main__":
