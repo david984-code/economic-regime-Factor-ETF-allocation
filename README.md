@@ -10,14 +10,19 @@ At each monthly rebalance, the model blends between predefined risk-on and risk-
 ## Project Structure
 ```text
 src/
-  economic_regime.py        # macro regime / risk_on construction
-  optimizer.py              # optimizes allocations and writes outputs
-  backtest.py               # backtest + performance metrics
-  format_allocations.py     # formats CSV into Excel report
+  economic_regime.py        # Macro regime classification (refactored as class)
+  optimizer.py              # Portfolio optimization per regime
+  backtest.py               # Historical backtest + performance metrics
+  format_allocations.py     # Excel report formatting
 
-outputs/
+tests/
+  test_economic_regime.py   # Unit tests (16 tests covering core logic)
+
+outputs/                    # Generated at runtime (not in git)
+  regime_labels_expanded.csv
   optimal_allocations.csv
   optimal_allocations_formatted.xlsx
-  regime_labels_expanded.csv
   current_factor_weights.csv
 
+pyproject.toml              # Dependencies, build config, tool settings (uv, ruff, mypy)
+.env                        # API keys (local only, not in git)
