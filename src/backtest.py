@@ -299,5 +299,5 @@ for k, v in out.items():
 
 # Save for reuse / handoff
 out_df = out.rename("weight").reset_index().rename(columns={"index": "asset"})
-out_df.to_csv("current_factor_weights.csv", index=False)
-print("\n[SUCCESS] Saved: current_factor_weights.csv")
+out_df.to_csv(OUTPUTS_DIR / "current_factor_weights.csv", index=False)
+print(f"\n[SUCCESS] Saved: {OUTPUTS_DIR / 'current_factor_weights.csv'}")
