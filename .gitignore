@@ -21,10 +21,6 @@ src/*.egg-info/
 .ruff_cache/
 .pytest_cache/
 
-# Generated outputs
-outputs/
-*.csv
-
 # OS
 .DS_Store
 Thumbs.db
