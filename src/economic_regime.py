@@ -5,6 +5,7 @@ based on GDP growth, inflation, money supply, velocity, and yield curve signals.
 """
 
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -196,7 +197,7 @@ class EconomicRegimeClassifier:
         return df
 
     def save_results(self, df: pd.DataFrame, output_dir: Path) -> None:
-        """Save regime classification results."""
+        """Save regime classification results with exponential backoff retry."""
         out_cols = [
             "date",
             "regime",
@@ -213,13 +214,26 @@ class EconomicRegimeClassifier:
 
         save_path = output_dir / "regime_labels_expanded.csv"
 
-        try:
-            regime_df.to_csv(save_path, index=False)
-            print(f"\n[SUCCESS] Saved: {save_path}")
-        except PermissionError:
-            fallback = output_dir / f"regime_labels_expanded_{datetime.now():%Y%m%d_%H%M%S}.csv"
-            regime_df.to_csv(fallback, index=False)
-            print(f"\n[WARNING] File was locked. Saved instead to: {fallback}")
+        # Exponential backoff retry: 0.5s, 1s, 2s, 4s (max 4 attempts)
+        max_attempts = 4
+        for attempt in range(max_attempts):
+            try:
+                regime_df.to_csv(save_path, index=False)
+                print(f"\n[SUCCESS] Saved: {save_path}")
+                return
+            except PermissionError as e:
+                if attempt < max_attempts - 1:
+                    wait_time = 0.5 * (2**attempt)
+                    print(
+                        f"[RETRY] File locked, retrying in {wait_time}s... "
+                        f"(attempt {attempt + 1}/{max_attempts})"
+                    )
+                    time.sleep(wait_time)
+                else:
+                    raise PermissionError(
+                        f"Failed to save after {max_attempts} attempts. "
+                        f"Please close any programs using {save_path}"
+                    ) from e
 
     def print_recent_regimes(self, df: pd.DataFrame) -> None:
         """Print recent regime classifications."""
