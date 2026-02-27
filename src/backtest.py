@@ -36,7 +36,8 @@ def vol_scaled_weights(raw_w: pd.Series, trailing_rets: pd.DataFrame) -> pd.Seri
     risky_assets = [c for c in w.index if c != "cash" and c in trailing_rets.columns]
 
     if len(risky_assets) == 0:
-        return w / w.sum()
+        result: pd.Series = w / w.sum()
+        return result
 
     vol = trailing_rets[risky_assets].std()  # daily vol
     vol = vol.clip(lower=MIN_VOL * vol.median(), upper=MAX_VOL * vol.median())
@@ -47,17 +48,17 @@ def vol_scaled_weights(raw_w: pd.Series, trailing_rets: pd.DataFrame) -> pd.Seri
     w[risky_assets] = w_risky
 
     # normalize
-    w = w / w.sum()
-    return w
+    normalized: pd.Series = w / w.sum()
+    return normalized
 
 
 # converters
-def dict_to_series(d, cols):
+def dict_to_series(d: dict[str, float], cols: list[str]) -> pd.Series:
     return pd.Series({c: float(d.get(c, 0.0)) for c in cols}, index=cols)
 
 
-def series_to_dict(s):
-    return {k: float(v) for k, v in s.to_dict().items()}
+def series_to_dict(s: pd.Series) -> dict[str, float]:
+    return {str(k): float(v) for k, v in s.to_dict().items()}
 
 
 # yfinance sometimes returns a MultiIndex columns object
@@ -106,11 +107,11 @@ RISK_ON_REGIMES = {"Recovery", "Overheating"}
 RISK_OFF_REGIMES = {"Contraction", "Stagflation"}
 
 
-def _avg_alloc(regimes: set[str]) -> dict:
+def _avg_alloc(regimes: set[str]) -> dict[str, float]:
     regs = [r for r in regimes if r in allocations]
     if not regs:
         raise ValueError(f"None of these regimes found in allocations: {regimes}")
-    out = dict.fromkeys(ASSETS, 0.0)
+    out: dict[str, float] = dict.fromkeys(ASSETS, 0.0)
     for r in regs:
         for a in ASSETS:
             out[a] += float(allocations[r].get(a, 0.0))
@@ -119,7 +120,7 @@ def _avg_alloc(regimes: set[str]) -> dict:
     return out
 
 
-def _blend_alloc(w_off: dict, w_on: dict, alpha: float) -> dict:
+def _blend_alloc(w_off: dict[str, float], w_on: dict[str, float], alpha: float) -> dict[str, float]:
     # alpha in [0,1]; 0=risk_off, 1=risk_on
     alpha = float(np.clip(alpha, 0.0, 1.0))
     w = {
@@ -138,10 +139,14 @@ W_RISK_OFF = _avg_alloc(RISK_OFF_REGIMES)
 
 
 # Build risk-on / risk-off anchors
-w_recovery = dict_to_series(allocations["Recovery"], ASSETS)
-w_overheat = dict_to_series(allocations["Overheating"], ASSETS)
-w_contract = dict_to_series(allocations["Contraction"], ASSETS)
-w_stag = dict_to_series(allocations["Stagflation"], ASSETS)
+w_recovery = dict_to_series({str(k): float(v) for k, v in allocations["Recovery"].items()}, ASSETS)
+w_overheat = dict_to_series(
+    {str(k): float(v) for k, v in allocations["Overheating"].items()}, ASSETS
+)
+w_contract = dict_to_series(
+    {str(k): float(v) for k, v in allocations["Contraction"].items()}, ASSETS
+)
+w_stag = dict_to_series({str(k): float(v) for k, v in allocations["Stagflation"].items()}, ASSETS)
 
 # Risk-on = favorable growth / inflation
 w_on = 0.5 * (w_recovery + w_overheat)
@@ -169,7 +174,7 @@ equal_weight_returns = returns[benchmark_assets].mean(axis=1)
 
 #  Compute Portfolio Returns Based on Regime
 
-portfolio_returns = []
+portfolio_returns_list: list[float] = []
 prev_regime = None
 prev_month = None  # track monthly rebalances
 
@@ -184,7 +189,7 @@ for date in returns.index:
 
     # If we don't know the regime for this date, skip it
     if pd.isna(regime):
-        portfolio_returns.append(np.nan)
+        portfolio_returns_list.append(np.nan)
         continue
 
     # Rebalance at the first trading day of each month (macro signal is monthly / forward-filled)
@@ -197,7 +202,7 @@ for date in returns.index:
         else:
             regime_key = REGIME_ALIASES.get(str(regime).strip(), str(regime).strip())
             if regime_key in allocations:
-                current_weights = allocations[regime_key]
+                current_weights = {str(k): float(v) for k, v in allocations[regime_key].items()}
             else:
                 print(
                     f"[WARNING] Unknown regime label '{regime}' on {date.date()} (keeping previous weights)"
@@ -214,19 +219,19 @@ for date in returns.index:
 
     # Compute daily return using current weights
     daily_return = sum(returns.loc[date, a] * float(current_weights.get(a, 0.0)) for a in ASSETS)
-    portfolio_returns.append(daily_return)
+    portfolio_returns_list.append(daily_return)
 
 # Convert to pandas Series for further analysis
-portfolio_returns = pd.Series(portfolio_returns, index=returns.index)
+portfolio_returns = pd.Series(portfolio_returns_list, index=returns.index)
 
 
 #  Performance Metrics
-def compute_metrics(rets, rf_daily=0.0):
+def compute_metrics(rets: pd.Series, rf_daily: float = 0.0) -> dict[str, float]:
     rets = rets.dropna()
     excess = rets - rf_daily
 
-    mean_daily = excess.mean()
-    std_daily = excess.std()
+    mean_daily = float(excess.mean())
+    std_daily = float(excess.std())
 
     print("[RETURN] Mean daily EXCESS return:", mean_daily)
     print("[RISK] Std dev daily:", std_daily)
@@ -235,12 +240,12 @@ def compute_metrics(rets, rf_daily=0.0):
     n_days = len(rets)
     years = n_days / 252
 
-    cagr = equity_curve.iloc[-1] ** (1 / years) - 1
-    volatility = rets.std() * np.sqrt(252)
-    sharpe = (mean_daily / std_daily) * np.sqrt(252) if std_daily != 0 else np.nan
+    cagr = float(equity_curve.iloc[-1] ** (1 / years) - 1)
+    volatility = float(rets.std() * np.sqrt(252))
+    sharpe = (mean_daily / std_daily) * np.sqrt(252) if std_daily != 0 else float(np.nan)
 
     drawdown = equity_curve / equity_curve.cummax() - 1
-    max_dd = drawdown.min()
+    max_dd = float(drawdown.min())
 
     return {"CAGR": cagr, "Volatility": volatility, "Sharpe": sharpe, "Max Drawdown": max_dd}
 
@@ -284,8 +289,9 @@ print("============================")
 if asof_alpha is not None:
     base_weights = _blend_alloc(W_RISK_OFF, W_RISK_ON, asof_alpha)
 else:
-    rk = REGIME_ALIASES.get(str(asof_regime).strip(), str(asof_regime).strip())
-    base_weights = allocations.get(rk, {a: 1.0 / len(ASSETS) for a in ASSETS})
+    rk: str = str(REGIME_ALIASES.get(str(asof_regime).strip(), str(asof_regime).strip()))
+    base_weights_raw = allocations.get(rk, {a: 1.0 / len(ASSETS) for a in ASSETS})
+    base_weights = {str(k): float(v) for k, v in base_weights_raw.items()}
 
 # Apply the same vol scaling as the backtest rebalance
 raw_w = dict_to_series(base_weights, ASSETS)
@@ -294,8 +300,9 @@ scaled_w = vol_scaled_weights(raw_w, trailing)
 
 # Print nicely
 out = scaled_w.sort_values(ascending=False)
-for k, v in out.items():
-    print(f"{k:>6}: {v:6.2%}")
+for asset_key, v in out.items():
+    asset_name: str = str(asset_key)
+    print(f"{asset_name:>6}: {v:6.2%}")
 
 # Save for reuse / handoff
 out_df = out.rename("weight").reset_index().rename(columns={"index": "asset"})

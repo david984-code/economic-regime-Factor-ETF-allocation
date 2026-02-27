@@ -58,7 +58,7 @@ indent-style = "space"
 
 # Mypy configuration
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.11"
 strict = true                       # Strict version
 warn_return_any = true              # Catches when types leak               
 warn_unused_configs = true          # If there are mypy config settings that don't do anything
@@ -67,6 +67,7 @@ disallow_any_unimported = false     # Many libraries (fredapi, yfinance) don't h
 no_implicit_optional = true         # Forces you to explicitly mark None as a possibility
 warn_redundant_casts = true         # Warns about unnecessary type casts
 warn_unused_ignores = true          # Warns if you have # type: ignore comments that aren't needed
+disable_error_code = "import-untyped"  # Suppress warnings about missing type stubs
 
 [[tool.mypy.overrides]]             # Creates an exception for specific modules. Without this mypy would be on every import as the libraries listed don't ship with type annotations
 module = [

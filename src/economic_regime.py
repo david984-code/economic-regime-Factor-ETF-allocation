@@ -78,7 +78,7 @@ class EconomicRegimeClassifier:
         s.index = pd.to_datetime(s.index)
         s.index = s.index.to_period("M").to_timestamp("M")
         s = s[~s.index.duplicated(keep="last")]
-        return s  # type: ignore[no-any-return]
+        return s
 
     def resample_to_monthly(
         self,
@@ -121,7 +121,7 @@ class EconomicRegimeClassifier:
         """
         mean = series.rolling(window=window, min_periods=min_periods).mean()
         std = series.rolling(window=window, min_periods=min_periods).std(ddof=0)
-        return (series - mean) / std.replace(0, np.nan)  # type: ignore[no-any-return]
+        return (series - mean) / std.replace(0, np.nan)
 
     @staticmethod
     def sigmoid(series: pd.Series) -> pd.Series:
