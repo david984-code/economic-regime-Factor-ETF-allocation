@@ -22,7 +22,7 @@ END_DATE = datetime.today().strftime("%Y-%m-%d")
 
 
 # Load regimes (monthly labels)
-def load_regimes():
+def load_regimes() -> pd.DataFrame:
     path = OUTPUTS_DIR / "regime_labels_expanded.csv"
     if not path.exists():
         raise FileNotFoundError(
@@ -33,7 +33,7 @@ def load_regimes():
 
 
 # Download daily prices and convert to monthly returns
-def main():
+def main() -> None:
 
     px = yf.download(TICKERS, start=START_DATE, end=END_DATE, progress=False)
 
@@ -54,7 +54,7 @@ def main():
 
     # Load regimes and add Period column
     regimes = load_regimes()
-    regimes["Period"] = regimes.index.to_period("M")
+    regimes["Period"] = pd.to_datetime(regimes.index).to_period("M")
 
     # Ensure required columns exist
 
@@ -73,7 +73,12 @@ def main():
     merged = pd.merge(returns, regimes, on="Period", how="inner")
     merged.set_index("Period", inplace=True)
 
-    def negative_sharpe(weights, mean_returns_risky, cov_matrix_risky, risk_free=0.0):
+    def negative_sharpe(
+        weights: np.ndarray,
+        mean_returns_risky: np.ndarray,
+        cov_matrix_risky: np.ndarray,
+        risk_free: float = 0.0,
+    ) -> float:
         """
         weights: full vector [risky..., cash]
         mean_returns_risky: array for risky assets only (no cash)
@@ -109,13 +114,13 @@ def main():
         # Small penalty so optimizer doesn't always hug max_cash boundary
         cash_penalty = 0.05 * cash_weight  # tune 0.01–0.10 if needed
 
-        return -sharpe + cash_penalty
+        return float(-sharpe + cash_penalty)
 
     # Constraints & bounds
     min_cash = 0.05
     max_cash = 0.15
 
-    def get_constraints(num_assets):
+    def get_constraints(num_assets: int) -> list[dict[str, object]]:
         return [
             {"type": "eq", "fun": lambda w: np.sum(w) - 1},  # full allocation
             {"type": "ineq", "fun": lambda w: w[-1] - min_cash},  # cash >= min_cash
