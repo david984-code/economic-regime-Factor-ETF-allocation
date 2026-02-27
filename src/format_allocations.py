@@ -23,7 +23,7 @@ THRESHOLD = 0.0001  # 0.01% cutoff
 PCT_DECIMALS = 2  # percentage decimals
 
 
-def main():
+def main() -> None:
     # ----------------------
     # Load data
     # ----------------------
@@ -48,14 +48,14 @@ def main():
     row_sums = df.sum(axis=1)
     for idx, s in row_sums.items():
         if s > 0:
-            df.loc[idx] = df.loc[idx] / s
+            df.loc[str(idx)] = df.loc[str(idx)] / s
 
     # Optional rounding + renormalize
     df = df.round(6)
     row_sums = df.sum(axis=1)
     for idx, s in row_sums.items():
         if s > 0:
-            df.loc[idx] = df.loc[idx] / s
+            df.loc[str(idx)] = df.loc[str(idx)] / s
 
     # Add regime back as first column
     df_out = df.copy()
