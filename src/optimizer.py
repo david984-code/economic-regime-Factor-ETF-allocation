@@ -10,26 +10,41 @@ import pandas as pd
 import yfinance as yf
 from scipy.optimize import minimize
 
+from .database import Database
+
 ROOT_DIR = (
     Path(__file__).resolve().parents[1]
 )  # .../Economic-Regime-Asset-Allocation-With-Fred-main
 OUTPUTS_DIR = ROOT_DIR / "outputs"
 
 
-TICKERS = ["SPY", "GLD", "MTUM", "VLUE", "USMV", "QUAL", "IJR", "VIG"]
+TICKERS = [
+    "SPY", "GLD", "MTUM", "VLUE", "USMV", "QUAL", "IJR", "VIG",
+    "IEF", "TLT",
+]
 START_DATE = "2010-01-01"
 END_DATE = datetime.today().strftime("%Y-%m-%d")
 
 
-# Load regimes (monthly labels)
+# Load regimes (monthly labels) from database
 def load_regimes() -> pd.DataFrame:
-    path = OUTPUTS_DIR / "regime_labels_expanded.csv"
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Missing {path}. Generate it first (or place the CSV in outputs/)."
-        )
-    df = pd.read_csv(path, parse_dates=["date"], index_col="date")
-    return df
+    """Load regime labels from database, fallback to CSV if needed."""
+    db = Database()
+    try:
+        df = db.load_regime_labels()
+        db.close()
+        return df
+    except Exception as e:
+        db.close()
+        # Fallback to CSV for backwards compatibility
+        path = OUTPUTS_DIR / "regime_labels_expanded.csv"
+        if not path.exists():
+            raise FileNotFoundError(
+                "No regime data found in database or CSV. "
+                "Run `python -m src.economic_regime` first."
+            ) from e
+        df = pd.read_csv(path, parse_dates=["date"], index_col="date")
+        return df
 
 
 # Download daily prices and convert to monthly returns
@@ -73,66 +88,79 @@ def main() -> None:
     merged = pd.merge(returns, regimes, on="Period", how="inner")
     merged.set_index("Period", inplace=True)
 
-    def negative_sharpe(
+    def negative_sortino(
         weights: np.ndarray,
-        mean_returns_risky: np.ndarray,
-        cov_matrix_risky: np.ndarray,
+        returns_risky: np.ndarray,
         risk_free: float = 0.0,
     ) -> float:
         """
+        Sortino ratio: return / downside_deviation (penalizes only downside vol).
         weights: full vector [risky..., cash]
-        mean_returns_risky: array for risky assets only (no cash)
-        cov_matrix_risky: covariance for risky assets only (no cash)
+        returns_risky: (T x n) array of monthly returns for risky assets
         """
-        # Split risky vs cash
         risky_weights = np.asarray(weights[:-1], dtype=float)
         cash_weight = float(weights[-1])
-
-        # If there is essentially no risky exposure, reject
         risky_sum = risky_weights.sum()
         if risky_sum <= 1e-10:
             return 1e9
 
-        # Normalize risky weights so Sharpe is based on the MIX, not the exposure size
         w = risky_weights / risky_sum
+        port_rets = returns_risky @ w
+        mean_ret = float(np.mean(port_rets))
+        downside_rets = np.minimum(port_rets - risk_free, 0.0)
+        downside_var = float(np.mean(downside_rets**2))
+        downside_vol = np.sqrt(downside_var) if downside_var > 1e-12 else 1e-8
 
-        mu = np.asarray(mean_returns_risky, dtype=float)
-        cov = np.asarray(cov_matrix_risky, dtype=float)
-
-        port_return = float(np.dot(w, mu))
-        port_var = float(w.T @ cov @ w)
-
-        if not np.isfinite(port_var) or port_var <= 1e-12:
+        sortino = (mean_ret - risk_free) / downside_vol
+        if not np.isfinite(sortino):
             return 1e9
 
-        port_vol = np.sqrt(port_var)
-        sharpe = (port_return - risk_free) / port_vol
+        cash_penalty = 0.05 * cash_weight
+        return float(-sortino + cash_penalty)
 
-        if not np.isfinite(sharpe):
-            return 1e9
+    # Regime-specific cash constraints (risk-off = more cash)
+    REGIME_CASH = {
+        "Recovery": (0.05, 0.10),
+        "Overheating": (0.05, 0.12),
+        "Stagflation": (0.10, 0.20),
+        "Contraction": (0.15, 0.30),
+        "Unknown": (0.10, 0.20),
+    }
+    default_min, default_max = 0.05, 0.15
 
-        # Small penalty so optimizer doesn't always hug max_cash boundary
-        cash_penalty = 0.05 * cash_weight  # tune 0.01–0.10 if needed
+    # Regime-specific min allocations: e.g. min gold in Stagflation, min bonds in Contraction
+    REGIME_MIN_ASSETS: dict[str, dict[str, float]] = {
+        "Stagflation": {"GLD": 0.08},
+        "Contraction": {"IEF": 0.05, "TLT": 0.05},
+    }
 
-        return float(-sharpe + cash_penalty)
-
-    # Constraints & bounds
-    min_cash = 0.05
-    max_cash = 0.15
-
-    def get_constraints(num_assets: int) -> list[dict[str, object]]:
-        return [
-            {"type": "eq", "fun": lambda w: np.sum(w) - 1},  # full allocation
-            {"type": "ineq", "fun": lambda w: w[-1] - min_cash},  # cash >= min_cash
-            {"type": "ineq", "fun": lambda w: max_cash - w[-1]},  # cash <= max_cash
+    def get_constraints(
+        num_assets: int, regime: str, asset_list: list[str]
+    ) -> list[dict[str, object]]:
+        min_cash, max_cash = REGIME_CASH.get(
+            regime, (default_min, default_max)
+        )
+        constraints = [
+            {"type": "eq", "fun": lambda w: np.sum(w) - 1},
+            {"type": "ineq", "fun": lambda w, mc=min_cash: w[-1] - mc},
+            {"type": "ineq", "fun": lambda w, mx=max_cash: mx - w[-1]},
         ]
+        min_assets = REGIME_MIN_ASSETS.get(regime, {})
+        for asset, min_w in min_assets.items():
+            if asset in asset_list:
+                idx = asset_list.index(asset)
+                constraints.append({
+                    "type": "ineq",
+                    "fun": lambda w, i=idx, m=min_w: w[i] - m,
+                })
+        return constraints
 
     # Store results
     optimal_allocations = {}
 
-    # Optimization loop
+    # Optimization loop (Sortino ratio, regime-specific min allocations)
     for regime in merged["regime"].unique():
-        print(f"\n[OPTIMIZE] Optimizing for regime: {regime}")
+        print(f"\n[OPTIMIZE] Optimizing for regime: {regime} (Sortino)")
         subset = merged[merged["regime"] == regime]
         subset_risky = subset[risky_assets].fillna(0)
 
@@ -140,15 +168,11 @@ def main() -> None:
             print(f"[WARNING] Skipping regime {regime}: not enough data.")
             continue
 
-        # Use risky-only mean/cov for the Sharpe objective (negative_sharpe normalizes risky weights)
-        mean_returns_risky = subset_risky.mean().values.astype(float)
-        cov_matrix_risky = subset_risky.cov().values.astype(float)
-
-        # Ridge regularization to prevent singular / near-singular covariance
-        eps = 1e-6
-        cov_matrix_risky = cov_matrix_risky + eps * np.eye(cov_matrix_risky.shape[0])
-
+        returns_risky = subset_risky.values.astype(float)
         n = len(full_asset_list)
+        min_cash, max_cash = REGIME_CASH.get(
+            regime, (default_min, default_max)
+        )
 
         # Feasible init: start cash at midpoint of [min_cash, max_cash]
         init_guess = np.full(n, 0.0)
@@ -159,15 +183,12 @@ def main() -> None:
         bounds = [(0.0, 1.0)] * len(full_asset_list)
 
         result = minimize(
-            negative_sharpe,
+            negative_sortino,
             init_guess,
-            args=(
-                mean_returns_risky,
-                cov_matrix_risky,
-            ),
+            args=(returns_risky,),
             method="SLSQP",
             bounds=bounds,
-            constraints=get_constraints(len(full_asset_list)),
+            constraints=get_constraints(n, regime, risky_assets),
         )
 
         if result.success:
@@ -177,14 +198,21 @@ def main() -> None:
         else:
             print(f"[ERROR] Failure for {regime}: {result.message}")
 
-    # Save results
+    # Save results to database and CSV
     if optimal_allocations:
+        # Save to database (primary storage)
+        db = Database()
+        db.save_optimal_allocations(optimal_allocations)
+        db.close()
+        print("[SUCCESS] Saved optimal allocations to database")
+
+        # Also save to CSV for backwards compatibility
         df_opt = pd.DataFrame(optimal_allocations).T
         df_opt.index.name = "regime"
         OUTPUTS_DIR.mkdir(exist_ok=True)
         out_csv = OUTPUTS_DIR / "optimal_allocations.csv"
         df_opt.to_csv(out_csv)
-        print(f"[SUCCESS] Saved {out_csv}")
+        print(f"[SUCCESS] Saved CSV backup: {out_csv}")
 
         print("[FORMAT] Formatting allocations into Excel...")
         subprocess.run(

@@ -1,7 +1,8 @@
 """Economic Regime Classification Module.
 
 This module fetches macroeconomic data from FRED and classifies economic regimes
-based on GDP growth, inflation, money supply, velocity, and yield curve signals.
+based on GDP growth, inflation, money supply, velocity, yield curve, and
+high-frequency indicators (ISM PMI, jobless claims, credit spreads).
 """
 
 import os
@@ -14,6 +15,20 @@ import pandas as pd
 from dotenv import load_dotenv
 from fredapi import Fred
 
+from .database import Database
+
+# High-frequency indicators (faster than GDP/CPI):
+# NAPM = ISM Manufacturing PMI (monthly, ~1-3 day lag)
+# INDPRO = Industrial Production (fallback if NAPM unavailable)
+# ICSA = Initial Jobless Claims (weekly, 1 day lag)
+# BAMLH0A0HYM2 = High Yield OAS (daily, 1 day lag)
+FRED_SERIES_OPTIONAL = {
+    "pmi": "NAPM",           # ISM Manufacturing PMI
+    "indpro": "INDPRO",      # Industrial Production (PMI fallback)
+    "claims": "ICSA",        # Weekly Jobless Claims
+    "hy_spread": "BAMLH0A0HYM2",  # High Yield Credit Spread
+}
+
 
 class EconomicRegimeClassifier:
     """Classifies economic regimes based on macroeconomic indicators."""
@@ -22,16 +37,25 @@ class EconomicRegimeClassifier:
         """Initialize the classifier with FRED API credentials.
 
         Args:
-            api_key: FRED API key for data access
+            api_key: FRED API key for data access (from .env)
         """
         self.fred = Fred(api_key=api_key)
         self.end_date = datetime.today().strftime("%Y-%m-%d")
 
+    def _fetch_optional_series(self, series_id: str) -> pd.Series | None:
+        """Fetch optional FRED series; return None if unavailable."""
+        try:
+            s = self.fred.get_series(series_id, observation_end=self.end_date)
+            s.index = pd.to_datetime(s.index)
+            return s
+        except Exception:
+            return None
+
     def fetch_fred_data(self) -> tuple[pd.Series, ...]:
         """Fetch macroeconomic data from FRED.
 
-        Returns:
-            Tuple of (gdp, cpi, yield_10y, yield_3m, m2, velocity) series
+        Core: GDP, CPI, yields, M2, velocity.
+        Optional: PMI, jobless claims, credit spreads (higher frequency).
         """
         gdp = self.fred.get_series("GDP", observation_end=self.end_date)
         cpi = self.fred.get_series("CPIAUCSL", observation_end=self.end_date)
@@ -40,11 +64,27 @@ class EconomicRegimeClassifier:
         m2 = self.fred.get_series("M2SL", observation_end=self.end_date)
         velocity = self.fred.get_series("M2V", observation_end=self.end_date)
 
-        # Convert indices to datetime
         for series in (gdp, cpi, yield_10y, yield_3m, m2, velocity):
             series.index = pd.to_datetime(series.index)
 
         return gdp, cpi, yield_10y, yield_3m, m2, velocity
+
+    def fetch_high_frequency_data(self) -> dict[str, pd.Series]:
+        """Fetch optional high-frequency indicators.
+        Uses INDPRO (Industrial Production) as fallback if NAPM (PMI) unavailable.
+        """
+        out: dict[str, pd.Series] = {}
+        for name, series_id in FRED_SERIES_OPTIONAL.items():
+            s = self._fetch_optional_series(series_id)
+            if s is not None and len(s) > 12:
+                out[name] = s
+                print(f"[DATA] High-frequency: {name} ({series_id}) latest: {s.index.max()}")
+        if "pmi" not in out and "indpro" in out:
+            out["pmi"] = out.pop("indpro")
+            print("[DATA] Using INDPRO as PMI proxy (NAPM unavailable)")
+        elif "indpro" in out:
+            del out["indpro"]
+        return out
 
     def print_data_summary(
         self,
@@ -107,6 +147,20 @@ class EconomicRegimeClassifier:
 
         return gdp, cpi, yield_10y, yield_3m, m2, velocity
 
+    def resample_high_freq_to_monthly(self, hf: dict[str, pd.Series]) -> dict[str, pd.Series]:
+        """Resample high-frequency series to month-end."""
+        out: dict[str, pd.Series] = {}
+        for name, s in hf.items():
+            s = s.copy()
+            s.index = pd.to_datetime(s.index)
+            if name == "claims":
+                s = s.resample("ME").mean()
+            else:
+                s = s.resample("ME").last().ffill()
+            s = self.to_month_end(s)
+            out[name] = s
+        return out
+
     @staticmethod
     def rolling_z_score(series: pd.Series, window: int = 60, min_periods: int = 24) -> pd.Series:
         """Calculate rolling z-score.
@@ -136,6 +190,7 @@ class EconomicRegimeClassifier:
         yield_3m: pd.Series,
         m2: pd.Series,
         velocity: pd.Series,
+        hf_monthly: dict[str, pd.Series] | None = None,
     ) -> pd.DataFrame:
         """Build dataframe with raw indicators and month-over-month changes."""
         gdp_mom = gdp.pct_change()
@@ -144,17 +199,29 @@ class EconomicRegimeClassifier:
         vel_mom = velocity.pct_change()
         yield_curve = (yield_10y - yield_3m).rename("yield_curve")
 
-        return pd.DataFrame(
-            {
-                "gdp": gdp,
-                "cpi": cpi,
-                "gdp_mom": gdp_mom,
-                "cpi_mom": cpi_mom,
-                "m2_mom": m2_mom,
-                "vel_mom": vel_mom,
-                "yield_curve": yield_curve,
-            }
-        )
+        data: dict[str, pd.Series] = {
+            "gdp": gdp,
+            "cpi": cpi,
+            "gdp_mom": gdp_mom,
+            "cpi_mom": cpi_mom,
+            "m2_mom": m2_mom,
+            "vel_mom": vel_mom,
+            "yield_curve": yield_curve,
+        }
+
+        if hf_monthly:
+            for name, s in hf_monthly.items():
+                if name == "pmi":
+                    data["pmi"] = s
+                    data["pmi_mom"] = s.pct_change()
+                elif name == "claims":
+                    data["claims"] = s
+                    data["claims_mom"] = -s.pct_change()
+                elif name == "hy_spread":
+                    data["hy_spread"] = s
+                    data["hy_spread_mom"] = -s.pct_change()
+
+        return pd.DataFrame(data)
 
     def add_z_scores(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add rolling z-scores to the dataframe."""
@@ -163,13 +230,26 @@ class EconomicRegimeClassifier:
         df["m2_z"] = self.rolling_z_score(df["m2_mom"])
         df["vel_z"] = self.rolling_z_score(df["vel_mom"])
         df["yield_level_z"] = self.rolling_z_score(df["yield_curve"])
+
+        if "pmi_mom" in df.columns:
+            df["pmi_z"] = self.rolling_z_score(df["pmi_mom"])
+        if "claims_mom" in df.columns:
+            df["claims_z"] = self.rolling_z_score(df["claims_mom"])
+        if "hy_spread_mom" in df.columns:
+            df["hy_spread_z"] = self.rolling_z_score(df["hy_spread_mom"])
+
         return df
 
     def calculate_macro_score(self, df: pd.DataFrame) -> pd.DataFrame:
         """Calculate macro risk score from z-scores."""
-        df["macro_score"] = (
-            df["gdp_z"] + df["vel_z"] - df["infl_z"] + df["m2_z"] + df["yield_level_z"]
-        )
+        base = df["gdp_z"] + df["vel_z"] - df["infl_z"] + df["m2_z"] + df["yield_level_z"]
+        if "pmi_z" in df.columns:
+            base = base + df["pmi_z"].fillna(0)
+        if "claims_z" in df.columns:
+            base = base + df["claims_z"].fillna(0)
+        if "hy_spread_z" in df.columns:
+            base = base + df["hy_spread_z"].fillna(0)
+        df["macro_score"] = base
         df["risk_on"] = self.sigmoid(df["macro_score"] * 0.25)
         return df
 
@@ -197,7 +277,7 @@ class EconomicRegimeClassifier:
         return df
 
     def save_results(self, df: pd.DataFrame, output_dir: Path) -> None:
-        """Save regime classification results with exponential backoff retry."""
+        """Save regime classification results to database and CSV backup."""
         out_cols = [
             "date",
             "regime",
@@ -209,9 +289,22 @@ class EconomicRegimeClassifier:
             "vel_z",
             "yield_level_z",
         ]
+        for c in ("pmi_z", "claims_z", "hy_spread_z"):
+            if c in df.columns:
+                out_cols.append(c)
         df_reset = df.reset_index().rename(columns={"index": "date"})
-        regime_df = df_reset[out_cols].dropna(subset=["regime"]).copy()
+        avail = [c for c in out_cols if c in df_reset.columns]
+        regime_df = df_reset[avail].dropna(subset=["regime"]).copy()
 
+        # Save to database (primary storage)
+        db = Database()
+        regime_df_for_db = regime_df[["date", "regime", "risk_on"]].copy()
+        regime_df_for_db.set_index("date", inplace=True)
+        db.save_regime_labels(regime_df_for_db)
+        db.close()
+        print("[SUCCESS] Saved regime labels to database")
+
+        # Also save to CSV for backwards compatibility
         save_path = output_dir / "regime_labels_expanded.csv"
 
         # Exponential backoff retry: 0.5s, 1s, 2s, 4s (max 4 attempts)
@@ -219,9 +312,9 @@ class EconomicRegimeClassifier:
         for attempt in range(max_attempts):
             try:
                 regime_df.to_csv(save_path, index=False)
-                print(f"\n[SUCCESS] Saved: {save_path}")
+                print(f"[SUCCESS] Saved CSV backup: {save_path}")
                 return
-            except PermissionError as e:
+            except PermissionError:
                 if attempt < max_attempts - 1:
                     wait_time = 0.5 * (2**attempt)
                     print(
@@ -230,10 +323,11 @@ class EconomicRegimeClassifier:
                     )
                     time.sleep(wait_time)
                 else:
-                    raise PermissionError(
-                        f"Failed to save after {max_attempts} attempts. "
-                        f"Please close any programs using {save_path}"
-                    ) from e
+                    print(
+                        f"[WARNING] Could not save CSV backup after {max_attempts} attempts. "
+                        f"Data is safely stored in database."
+                    )
+                    return
 
     def print_recent_regimes(self, df: pd.DataFrame) -> None:
         """Print recent regime classifications."""
@@ -256,9 +350,13 @@ class EconomicRegimeClassifier:
 
     def run(self) -> None:
         """Run the complete regime classification pipeline."""
-        # Fetch data
+        # Fetch core data
         gdp, cpi, yield_10y, yield_3m, m2, velocity = self.fetch_fred_data()
         self.print_data_summary(gdp, cpi, yield_10y, yield_3m, m2, velocity)
+
+        # Fetch high-frequency indicators (PMI, claims, credit spread)
+        hf_raw = self.fetch_high_frequency_data()
+        hf_monthly = self.resample_high_freq_to_monthly(hf_raw) if hf_raw else None
 
         # Resample to monthly
         gdp, cpi, yield_10y, yield_3m, m2, velocity = self.resample_to_monthly(
@@ -266,7 +364,9 @@ class EconomicRegimeClassifier:
         )
 
         # Build dataframe and calculate z-scores
-        df = self.build_dataframe(gdp, cpi, yield_10y, yield_3m, m2, velocity)
+        df = self.build_dataframe(
+            gdp, cpi, yield_10y, yield_3m, m2, velocity, hf_monthly=hf_monthly
+        )
         df = self.add_z_scores(df)
 
         # Calculate scores

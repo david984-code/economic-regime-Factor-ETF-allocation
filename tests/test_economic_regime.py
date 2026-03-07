@@ -188,7 +188,7 @@ class TestEconomicRegimeClassifier:
     def test_save_results_retry_exhausted(
         self, classifier: EconomicRegimeClassifier, tmp_path: Path
     ) -> None:
-        """Test save fails after exhausting all retries."""
+        """Test CSV backup fails gracefully after exhausting retries (data still in DB)."""
         df = pd.DataFrame(
             {
                 "gdp_z": [1.0],
@@ -205,8 +205,9 @@ class TestEconomicRegimeClassifier:
         with patch.object(
             pd.DataFrame, "to_csv", side_effect=PermissionError("Permanently locked")
         ):
-            with pytest.raises(PermissionError, match="Failed to save after 4 attempts"):
-                classifier.save_results(df, tmp_path)
+            # Should not raise - data is saved to database, CSV is just a backup
+            classifier.save_results(df, tmp_path)
+            # Test passes if no exception is raised
 
     def test_build_dataframe_structure(self, classifier: EconomicRegimeClassifier) -> None:
         """Test dataframe construction from economic indicators."""
