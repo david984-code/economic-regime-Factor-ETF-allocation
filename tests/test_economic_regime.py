@@ -8,7 +8,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.economic_regime import EconomicRegimeClassifier
+from src.models.regime_classifier import (
+    RegimeClassifier as EconomicRegimeClassifier,
+    run_parity_check,
+)
 
 
 class TestEconomicRegimeClassifier:
@@ -107,6 +110,18 @@ class TestEconomicRegimeClassifier:
         expected_regimes = ["Recovery", "Stagflation", "Overheating", "Contraction", "Unknown"]
         assert list(result["regime"]) == expected_regimes
 
+    def test_vectorized_parity(self) -> None:
+        """Vectorized implementation matches row-wise apply."""
+        df = pd.DataFrame(
+            {
+                "gdp_z": [1.5, -0.5, 1.0, -1.0, np.nan, 0.0, 0.0],
+                "infl_z": [-0.5, 1.0, 1.0, -1.0, 0.5, 0.0, 1.0],
+            }
+        )
+        all_match, report = run_parity_check(df)
+        assert all_match
+        assert report["match_count"] == len(df)
+
     def test_calculate_macro_score(self, classifier: EconomicRegimeClassifier) -> None:
         """Test macro score calculation and risk_on transformation."""
         df = pd.DataFrame(
@@ -125,7 +140,7 @@ class TestEconomicRegimeClassifier:
         assert "risk_on" in result.columns
         assert 0 <= result["risk_on"].iloc[0] <= 1
 
-    @patch("src.economic_regime.Path.mkdir")
+    @patch("src.models.regime_classifier.Path.mkdir")
     def test_save_results_success(
         self, mock_mkdir: Mock, classifier: EconomicRegimeClassifier, tmp_path: Path
     ) -> None:
