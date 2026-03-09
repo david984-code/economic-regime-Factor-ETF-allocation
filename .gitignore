@@ -25,6 +25,7 @@ src/*.egg-info/
 outputs/
 *.csv
 *.xlsx
+*.db
 
 # Logs
 logs/
