@@ -126,12 +126,18 @@ def _create_tables(conn: sqlite3.Connection) -> None:
 
 def _get_experiment_type(params: dict[str, Any]) -> str:
     """Return experiment type label from params."""
+    hybrid = params.get("use_hybrid_signal", False)
+    smoothing = params.get("use_regime_smoothing", False)
     override = params.get("use_stagflation_override", True)
     cap = params.get("use_stagflation_risk_on_cap", False)
-    if override:
-        return "stagflation_override"
+    if hybrid:
+        return "hybrid_macro_market"
+    if smoothing:
+        return "regime_smoothing"
     if cap:
         return "stagflation_risk_on_cap"
+    if override:
+        return "stagflation_override"
     return "baseline"
 
 
