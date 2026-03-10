@@ -36,6 +36,32 @@ TICKERS = [
 ]
 ASSETS = TICKERS + ["cash"]
 
+# Expanded universe with sector ETFs
+TICKERS_EXPANDED = TICKERS + [
+    "XLK",  # Technology
+    "XLF",  # Financials
+    "XLE",  # Energy
+    "XLV",  # Healthcare
+    "XLI",  # Industrials
+    "XLP",  # Consumer Staples
+    "XLY",  # Consumer Discretionary
+    "XLU",  # Utilities
+    "XLB",  # Materials
+    "XLRE", # Real Estate
+    "XLC",  # Communication Services
+]
+ASSETS_EXPANDED = TICKERS_EXPANDED + ["cash"]
+
+# Sleeve definitions for current universe
+RISK_ON_ASSETS_BASE = ["SPY", "MTUM", "VLUE", "QUAL", "USMV", "IJR", "VIG"]
+RISK_OFF_ASSETS_BASE = ["IEF", "TLT", "GLD"]
+
+# Sleeve definitions for expanded universe
+RISK_ON_ASSETS_EXPANDED = RISK_ON_ASSETS_BASE + [
+    "XLK", "XLF", "XLE", "XLV", "XLI", "XLP", "XLY", "XLU", "XLB", "XLRE", "XLC"
+]
+RISK_OFF_ASSETS_EXPANDED = RISK_OFF_ASSETS_BASE  # Same defensive assets
+
 # --- Backtest / vol scaling ---
 VOL_LOOKBACK = 63  # ~3 months of trading days
 VOL_EPS = 1e-8
