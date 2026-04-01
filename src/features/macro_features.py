@@ -1,8 +1,6 @@
 """Macro feature engineering: resample, z-scores, macro score."""
 
-from typing import Any
 
-import numpy as np
 import pandas as pd
 
 from src.features.transforms import rolling_z_score, sigmoid, to_month_end
@@ -57,7 +55,27 @@ def build_macro_dataframe(
     velocity: pd.Series,
     hf_monthly: dict[str, pd.Series] | None = None,
 ) -> pd.DataFrame:
-    """Build dataframe with raw indicators and month-over-month changes (no z-scores)."""
+    """Build dataframe with raw indicators and month-over-month changes (no z-scores).
+
+    Forward-fills quarterly series (GDP, velocity) so that months between
+    releases carry the last known value instead of producing NaN.
+    """
+    # Extend quarterly series to cover the full monthly date range.
+    # GDP and M2V are published quarterly with ~2-month lag; carrying
+    # the last known value forward is standard macro practice.
+    all_dates = (
+        gdp.index.union(cpi.index)
+        .union(yield_10y.index)
+        .union(m2.index)
+    )
+    if len(all_dates) > 0:
+        gdp = gdp.reindex(all_dates).ffill()
+        velocity = velocity.reindex(all_dates).ffill()
+        cpi = cpi.reindex(all_dates).ffill()
+        m2 = m2.reindex(all_dates).ffill()
+        yield_10y = yield_10y.reindex(all_dates).ffill()
+        yield_3m = yield_3m.reindex(all_dates).ffill()
+
     gdp_mom = gdp.pct_change()
     cpi_mom = cpi.pct_change()
     m2_mom = m2.pct_change()
@@ -106,9 +124,19 @@ def add_z_scores(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def calculate_macro_score(df: pd.DataFrame) -> pd.DataFrame:
-    """Add macro_score and risk_on columns. Requires z-score columns."""
-    """Add macro_score and risk_on columns to dataframe."""
-    base = df["gdp_z"] + df["vel_z"] - df["infl_z"] + df["m2_z"] + df["yield_level_z"]
+    """Add macro_score and risk_on columns to dataframe.
+
+    Core z-scores (gdp_z, infl_z, m2_z, vel_z, yield_level_z) are filled
+    with 0 (neutral) when NaN so the score degrades gracefully rather than
+    collapsing to NaN during FRED publication gaps.
+    """
+    base = (
+        df["gdp_z"].fillna(0)
+        + df["vel_z"].fillna(0)
+        - df["infl_z"].fillna(0)
+        + df["m2_z"].fillna(0)
+        + df["yield_level_z"].fillna(0)
+    )
     if "pmi_z" in df.columns:
         base = base + df["pmi_z"].fillna(0)
     if "claims_z" in df.columns:
