@@ -1,20 +1,24 @@
 """Daily pipeline orchestration for quantitative research."""
 
+from __future__ import annotations
+
+import argparse
 import logging
-import os
 import time
 from datetime import datetime
 
 from dotenv import load_dotenv
 
-from src.config import LOGS_DIR, START_DATE, TICKERS, get_end_date
+from src.config import LOGS_DIR, START_DATE, get_end_date
 from src.data.pipeline_data import PipelineData
+from src.utils.fred_key import get_fred_api_key
 from src.utils.logging_config import setup_logging
+from src.utils.ticker_universe import parse_tickers_arg, resolve_tickers
 
 logger = logging.getLogger(__name__)
 
 
-def run_daily_pipeline() -> int:
+def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
     """Run the complete daily pipeline in-process.
 
     Steps:
@@ -27,9 +31,11 @@ def run_daily_pipeline() -> int:
         0 on success, 1 on failure.
     """
     load_dotenv()
-    api_key = os.getenv("FRED_API_KEY")
+    api_key = get_fred_api_key()
     if not api_key:
-        logger.error("FRED_API_KEY not found in .env")
+        logger.error(
+            "FRED API key not found. Set FRED_API_KEY or FRED_API_KEY_FILE (see README)."
+        )
         return 1
 
     start = datetime.now()
@@ -60,7 +66,9 @@ def run_daily_pipeline() -> int:
     # Fetch market data ONCE for all downstream steps
     logger.info("\n[STEP] Fetching market data (shared by forecast, optimizer, backtest)")
     t0_fetch = time.perf_counter()
-    pipeline_data = PipelineData(tickers=TICKERS, start=START_DATE, end=get_end_date())
+    tickers = resolve_tickers(cli_tickers)
+    logger.info("[CONFIG] Universe: %d tickers: %s", len(tickers), ",".join(tickers))
+    pipeline_data = PipelineData(tickers=tickers, start=START_DATE, end=get_end_date())
     pipeline_data.get_prices()  # Triggers fetch, populates cache
     timings["data_fetch"] = time.perf_counter() - t0_fetch
     logger.info(
@@ -90,11 +98,22 @@ def run_daily_pipeline() -> int:
             logger.error("Pipeline failed after %.1fs", elapsed)
             return 1
 
+    # Non-critical: SMS notification
+    logger.info("\n[STEP] SMS notification")
+    try:
+        t0 = time.perf_counter()
+        from src.notify import notify
+        notify()
+        timings["notify"] = time.perf_counter() - t0
+        logger.info("[OK] Completed: SMS notification (%.2fs)", timings["notify"])
+    except Exception as e:
+        logger.warning("[SKIP] SMS notification failed (non-critical): %s", e)
+
     elapsed = (datetime.now() - start).total_seconds()
     logger.info("\n" + "=" * 80)
     logger.info("SUMMARY: All steps completed in %.1fs", elapsed)
     logger.info("TIMING BY STEP:")
-    for k in ["data_fetch", "regime_classification", "regime_forecast", "optimizer", "backtest"]:
+    for k in ["data_fetch", "regime_classification", "regime_forecast", "optimizer", "backtest", "notify"]:
         if k in timings:
             logger.info("  %s: %.2fs", k, timings[k])
     logger.info("SUMMARY: Market data fetched once in %.2fs (3 steps reused cache)", timings.get("data_fetch", 0))
@@ -122,6 +141,23 @@ def _run_backtest(pipeline_data: PipelineData) -> None:
     run_backtest(pipeline_data=pipeline_data)
 
 
+def _parse_cli() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Daily pipeline: regime classification, forecast, optimizer, backtest.",
+    )
+    p.add_argument(
+        "--tickers",
+        type=str,
+        default="",
+        help="Comma-separated symbols (overrides PIPELINE_TICKERS env and config default).",
+    )
+    return p.parse_args()
+
+
 if __name__ == "__main__":
     import sys
-    sys.exit(run_daily_pipeline())
+
+    load_dotenv()
+    args = _parse_cli()
+    cli_list = parse_tickers_arg(args.tickers)
+    sys.exit(run_daily_pipeline(cli_tickers=cli_list))

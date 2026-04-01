@@ -56,11 +56,17 @@ ASSETS_EXPANDED = TICKERS_EXPANDED + ["cash"]
 RISK_ON_ASSETS_BASE = ["SPY", "MTUM", "VLUE", "QUAL", "USMV", "IJR", "VIG"]
 RISK_OFF_ASSETS_BASE = ["IEF", "TLT", "GLD"]
 
-# Sleeve definitions for expanded universe
+# Sleeve definitions for expanded universe (sector ETFs)
 RISK_ON_ASSETS_EXPANDED = RISK_ON_ASSETS_BASE + [
     "XLK", "XLF", "XLE", "XLV", "XLI", "XLP", "XLY", "XLU", "XLB", "XLRE", "XLC"
 ]
 RISK_OFF_ASSETS_EXPANDED = RISK_OFF_ASSETS_BASE  # Same defensive assets
+
+# Diverse multi-asset universe (v2): global equity + real assets + inflation hedges
+RISK_ON_ASSETS_DIVERSE = RISK_ON_ASSETS_BASE + ["EFA", "EEM", "VNQ", "XLE"]
+RISK_OFF_ASSETS_DIVERSE = RISK_OFF_ASSETS_BASE + ["TIP", "SHY", "DBC", "UUP"]
+TICKERS_DIVERSE = RISK_ON_ASSETS_DIVERSE + RISK_OFF_ASSETS_DIVERSE
+ASSETS_DIVERSE = TICKERS_DIVERSE + ["cash"]
 
 # --- Backtest / vol scaling ---
 VOL_LOOKBACK = 63  # ~3 months of trading days
@@ -82,8 +88,29 @@ DEFAULT_MAX_CASH = 0.15
 
 # --- Regime-specific min asset allocations ---
 REGIME_MIN_ASSETS: dict[str, dict[str, float]] = {
+    "Recovery": {"SPY": 0.15},
+    "Overheating": {"SPY": 0.10},
     "Stagflation": {"GLD": 0.08},
     "Contraction": {"IEF": 0.05, "TLT": 0.05},
+}
+
+# --- Regime-specific max asset allocations (cap single-asset concentration) ---
+REGIME_MAX_ASSETS: dict[str, dict[str, float]] = {
+    "Recovery": {"GLD": 0.20, "TLT": 0.10, "IEF": 0.10},
+    "Overheating": {"GLD": 0.25, "TLT": 0.10, "IEF": 0.10},
+    "Stagflation": {"IJR": 0.15, "MTUM": 0.15},
+}
+
+# --- Min aggregate risk-on sleeve weight per regime ---
+REGIME_MIN_RISK_ON: dict[str, float] = {
+    "Recovery": 0.55,
+    "Overheating": 0.45,
+}
+
+# --- Max aggregate risk-on sleeve weight per regime ---
+REGIME_MAX_RISK_ON: dict[str, float] = {
+    "Stagflation": 0.40,
+    "Contraction": 0.30,
 }
 
 # --- FRED series (optional high-frequency) ---
