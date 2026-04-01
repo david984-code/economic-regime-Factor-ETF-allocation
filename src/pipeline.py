@@ -98,22 +98,22 @@ def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
             logger.error("Pipeline failed after %.1fs", elapsed)
             return 1
 
-    # Non-critical: SMS notification
-    logger.info("\n[STEP] SMS notification")
+    # Non-critical: daily report + SMS
+    logger.info("\n[STEP] Daily report + SMS")
     try:
         t0 = time.perf_counter()
-        from src.notify import notify
-        notify()
-        timings["notify"] = time.perf_counter() - t0
-        logger.info("[OK] Completed: SMS notification (%.2fs)", timings["notify"])
+        from src.daily_report import send_daily_report
+        send_daily_report()
+        timings["daily_report"] = time.perf_counter() - t0
+        logger.info("[OK] Completed: Daily report + SMS (%.2fs)", timings["daily_report"])
     except Exception as e:
-        logger.warning("[SKIP] SMS notification failed (non-critical): %s", e)
+        logger.warning("[SKIP] Daily report failed (non-critical): %s", e)
 
     elapsed = (datetime.now() - start).total_seconds()
     logger.info("\n" + "=" * 80)
     logger.info("SUMMARY: All steps completed in %.1fs", elapsed)
     logger.info("TIMING BY STEP:")
-    for k in ["data_fetch", "regime_classification", "regime_forecast", "optimizer", "backtest", "notify"]:
+    for k in ["data_fetch", "regime_classification", "regime_forecast", "optimizer", "backtest", "daily_report"]:
         if k in timings:
             logger.info("  %s: %.2fs", k, timings[k])
     logger.info("SUMMARY: Market data fetched once in %.2fs (3 steps reused cache)", timings.get("data_fetch", 0))
