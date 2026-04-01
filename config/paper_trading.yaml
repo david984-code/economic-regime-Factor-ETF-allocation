@@ -1,0 +1,40 @@
+# Paper trading configuration (IBKR via IB Gateway).
+# Do not commit credentials. Use environment variables for account:
+#   IBKR_ACCOUNT - paper account ID (e.g. DU1234567)
+# Optional overrides: IBKR_HOST, IBKR_PORT, IBKR_CLIENT_ID
+# Live trading is NOT supported; paper_only must remain true.
+
+host: "127.0.0.1"
+port: 4002   # IB Gateway paper (TWS paper = 7497). Live = 7496 — do not use.
+client_id: 1
+reconciliation_client_id: 2   # Use different client_id for read-after-write to avoid "client id already in use"
+# Paper account — set via IBKR_ACCOUNT env var (do not hardcode here)
+account: ""
+trading_enabled: true   # Must be true in config to allow --submit-paper-orders
+dry_run: true
+paper_only: true         # Must be true; live trading unsupported
+
+# Execution safety limits (used by run_paper_trading.py)
+execution:
+  # Max dollar notional per single order (shares notional * price_used)
+  max_notional_per_order: 400000.0  # Raised from 180k for $1M portfolio (35% single-asset = $350k)
+  # Max one-way turnover allowed for the rebalance (preview.turnover_one_way)
+  # If you want to be stricter, lower this; if you want larger daily rebalances, raise it.
+  max_total_turnover: 1.0
+
+# Dry-run rebalance workflow and paper order submission
+rebalance:
+  tau: 0.015                    # No-trade band: only rebalance if |target - current| > tau
+  # Target weights must sum to ~1.0 unless allow_leverage is true (see create_orders.validate_target_weights_for_execution)
+  allow_leverage: false
+  target_weight_sum_tolerance: 0.02
+  target_weights_path: "outputs/rebalance/target_weights.csv"   # or .json
+  mock_positions_path: "outputs/rebalance/mock_positions.json" # fallback when broker unavailable
+  report_dir: "outputs/rebalance/reports"
+  prices_path: ""               # optional: JSON symbol -> price for share conversion (else use avgCost)
+  # Paper order submission (only when trading_enabled and --submit-paper-orders)
+  order_type: "MKT"              # MKT = market, LMT = limit (uses price_used from preview)
+  duplicate_run_protection: true # Refuse submission if same calendar day already submitted
+  max_weight_delta: 0.35         # Refuse if any single order exceeds this weight delta
+  max_notional: 400000.0         # Align with execution.max_notional_per_order for monthly runner parity
+  last_submission_file: "last_paper_submission.json"
