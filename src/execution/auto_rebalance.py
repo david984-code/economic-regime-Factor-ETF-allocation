@@ -42,43 +42,83 @@ def is_rebalance_day() -> bool:
 
 
 def generate_target_weights() -> dict[str, float]:
-    """Run backtest with current settings and extract latest weights.
+    """Compute target weights from current regime, allocations, and vol scaling.
+
+    Uses the same logic as run_backtest (blend → inv-vol scale) but only
+    for the latest date, avoiding backtest trailing-weight artifacts.
 
     Returns:
-        Dict of {ticker: weight} for the latest rebalance date.
+        Dict of {ticker: weight} for the current rebalance.
     """
-    from src.backtest.engine import run_backtest_with_allocations
+    import polars as pl
+
+    from src.allocation.vol_scaling import vol_scaled_weights
+    from src.backtest.engine import _avg_alloc, _blend_alloc
+    from src.config import (
+        ASSETS,
+        REGIME_ALIASES,
+        RISK_OFF_REGIMES,
+        RISK_ON_REGIMES,
+        TICKERS,
+        VOL_LOOKBACK,
+    )
     from src.data.market_ingestion import fetch_prices
     from src.utils.database import Database
 
-    prices = fetch_prices(start="2010-01-01")
+    prices = fetch_prices(start="2024-01-01")
     db = Database()
     regime_df = db.load_regime_labels()
     allocations = db.load_optimal_allocations()
+    forecast = None
+    try:
+        next_month = (pd.Timestamp.today().to_period("M") + 1).strftime("%Y-%m")
+        forecast = db.load_latest_regime_forecast(next_month)
+    except Exception:
+        pass
+    db.close()
+
     allocations = {str(k).strip(): v for k, v in allocations.items()}
     for alloc in allocations.values():
         if "cash" not in alloc:
             alloc["cash"] = 0.0
-    db.close()
 
-    # Ensure clean DatetimeIndex for resampling
+    # Current regime and risk_on
     regime_df.index = pd.to_datetime(regime_df.index)
     regime_df = regime_df[regime_df.index.notna()]
+    latest = regime_df.iloc[-1]
+    regime = str(latest["regime"]).strip()
+    risk_on = float(latest["risk_on"]) if pd.notna(latest["risk_on"]) else 0.5
 
-    result = run_backtest_with_allocations(
-        prices,
-        regime_df,
-        allocations,
-        return_weights=True,
-        use_stagflation_override=True,
-        tolerance=0.015,
-        use_post_blend_inv_vol=True,
-        use_regime_smoothing=True,
-        regime_smoothing_window=2,
+    # Blend with forecast if available
+    if forecast is not None:
+        risk_on = 0.5 * risk_on + 0.5 * forecast["risk_on_forecast"]
+
+    logger.info(
+        "Target weight generation: regime=%s risk_on=%.3f forecast=%s",
+        regime,
+        risk_on,
+        "yes" if forecast else "no",
     )
-    _, weights_df = result[0], result[1]
-    latest = weights_df.iloc[-1]
-    return {k: float(v) for k, v in latest.items() if v > 0.001}
+
+    # Build risk-on and risk-off sleeve averages
+    w_risk_on = _avg_alloc(allocations, RISK_ON_REGIMES, ASSETS)
+    w_risk_off = _avg_alloc(allocations, RISK_OFF_REGIMES, ASSETS)
+
+    # Stagflation override: use raw Stagflation allocation
+    regime_mapped = REGIME_ALIASES.get(regime, regime)
+    if regime_mapped == "Stagflation" and "Stagflation" in allocations:
+        base_weights = {str(k): float(v) for k, v in allocations["Stagflation"].items()}
+    else:
+        base_weights = _blend_alloc(w_risk_off, w_risk_on, risk_on, ASSETS)
+
+    # Inverse-vol scaling using trailing returns
+    returns = prices[TICKERS].pct_change().dropna()
+    trailing = returns.tail(VOL_LOOKBACK)
+    trailing_pl = pl.from_pandas(trailing)
+    scaled = vol_scaled_weights(base_weights, trailing_pl, list(TICKERS))
+
+    logger.info("Target weights: %s", {k: f"{v:.3f}" for k, v in sorted(scaled.items(), key=lambda x: x[1], reverse=True) if v > 0.005})
+    return {k: float(v) for k, v in scaled.items() if v > 0.001}
 
 
 def save_target_weights(weights: dict[str, float]) -> Path:
