@@ -98,14 +98,29 @@ def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
             logger.error("Pipeline failed after %.1fs", elapsed)
             return 1
 
-    # Non-critical: daily report + SMS
-    logger.info("\n[STEP] Daily report + SMS")
+    # Non-critical: auto-rebalance (1st trading day of month only)
+    logger.info("\n[STEP] Auto-rebalance check")
+    try:
+        t0 = time.perf_counter()
+        from src.execution.auto_rebalance import run_auto_rebalance
+        rebal_result = run_auto_rebalance()
+        timings["auto_rebalance"] = time.perf_counter() - t0
+        logger.info(
+            "[OK] Auto-rebalance: %s (%.2fs)",
+            rebal_result.get("action", "?"),
+            timings["auto_rebalance"],
+        )
+    except Exception as e:
+        logger.warning("[SKIP] Auto-rebalance failed (non-critical): %s", e)
+
+    # Non-critical: daily report
+    logger.info("\n[STEP] Daily report")
     try:
         t0 = time.perf_counter()
         from src.daily_report import send_daily_report
         send_daily_report()
         timings["daily_report"] = time.perf_counter() - t0
-        logger.info("[OK] Completed: Daily report + SMS (%.2fs)", timings["daily_report"])
+        logger.info("[OK] Completed: Daily report (%.2fs)", timings["daily_report"])
     except Exception as e:
         logger.warning("[SKIP] Daily report failed (non-critical): %s", e)
 
@@ -113,7 +128,7 @@ def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
     logger.info("\n" + "=" * 80)
     logger.info("SUMMARY: All steps completed in %.1fs", elapsed)
     logger.info("TIMING BY STEP:")
-    for k in ["data_fetch", "regime_classification", "regime_forecast", "optimizer", "backtest", "daily_report"]:
+    for k in ["data_fetch", "regime_classification", "regime_forecast", "optimizer", "backtest", "auto_rebalance", "daily_report"]:
         if k in timings:
             logger.info("  %s: %.2fs", k, timings[k])
     logger.info("SUMMARY: Market data fetched once in %.2fs (3 steps reused cache)", timings.get("data_fetch", 0))
