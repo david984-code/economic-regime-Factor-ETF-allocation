@@ -9,9 +9,9 @@ import pandas as pd
 
 from src.config import OUTPUTS_DIR
 from src.evaluation.model_results_db import (
+    _CSV_TO_DB,
     MODEL_RESULTS_DB,
     get_latest_run,
-    _CSV_TO_DB,
 )
 
 TOLERANCE = 1e-9
@@ -61,9 +61,7 @@ def validate_run(run_id: str | None = None) -> int:
         conn.close()
 
     if len(db_rows) != len(csv_df):
-        print(
-            f"ERROR: Row count mismatch. CSV={len(csv_df)}, SQLite={len(db_rows)}"
-        )
+        print(f"ERROR: Row count mismatch. CSV={len(csv_df)}, SQLite={len(db_rows)}")
         return 1
 
     csv_df = csv_df.sort_values(
@@ -81,11 +79,15 @@ def validate_run(run_id: str | None = None) -> int:
 
         if is_overall:
             if csv_row["segment"] != "OVERALL":
-                print(f"ERROR: Row {i}: segment mismatch. DB=OVERALL, CSV={csv_row['segment']}")
+                print(
+                    f"ERROR: Row {i}: segment mismatch. DB=OVERALL, CSV={csv_row['segment']}"
+                )
                 return 1
         else:
             if int(csv_row["segment"]) != segment_idx:
-                print(f"ERROR: Row {i}: segment_idx mismatch. DB={segment_idx}, CSV={csv_row['segment']}")
+                print(
+                    f"ERROR: Row {i}: segment_idx mismatch. DB={segment_idx}, CSV={csv_row['segment']}"
+                )
                 return 1
 
         for csv_col, db_col in _CSV_TO_DB.items():
@@ -96,7 +98,9 @@ def validate_run(run_id: str | None = None) -> int:
             if pd.isna(csv_val) and db_val is None:
                 continue
             if pd.isna(csv_val) or db_val is None:
-                print(f"ERROR: Row {i} {csv_col}: CSV={csv_val!r} DB={db_val!r} (null mismatch)")
+                print(
+                    f"ERROR: Row {i} {csv_col}: CSV={csv_val!r} DB={db_val!r} (null mismatch)"
+                )
                 return 1
             csv_f = float(csv_val)
             db_f = float(db_val)

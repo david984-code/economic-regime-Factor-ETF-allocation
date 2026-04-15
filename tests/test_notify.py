@@ -36,9 +36,7 @@ def mock_db(tmp_path: Path) -> Path:
             benchmark_sharpe REAL, benchmark_max_drawdown REAL
         )
     """)
-    conn.execute(
-        "INSERT INTO regime_labels VALUES ('2026-03-31', 'Recovery', 0.72)"
-    )
+    conn.execute("INSERT INTO regime_labels VALUES ('2026-03-31', 'Recovery', 0.72)")
     allocations = [
         ("Recovery", "SPY", 0.28),
         ("Recovery", "MTUM", 0.18),
@@ -49,9 +47,7 @@ def mock_db(tmp_path: Path) -> Path:
         ("Recovery", "USMV", 0.05),
         ("Recovery", "cash", 0.05),
     ]
-    conn.executemany(
-        "INSERT INTO optimal_allocations VALUES (?, ?, ?)", allocations
-    )
+    conn.executemany("INSERT INTO optimal_allocations VALUES (?, ?, ?)", allocations)
     conn.execute(
         "INSERT INTO backtest_results "
         "(portfolio_cagr, portfolio_volatility, portfolio_sharpe, portfolio_max_drawdown, "
@@ -186,8 +182,13 @@ class TestSendSms:
 
 
 class TestNotify:
-    def test_notify_logs_warning_on_missing_config(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_notify_logs_warning_on_missing_config(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         with patch("src.notify.build_sms_body", return_value="test body"):
             with patch("src.notify.send_sms", side_effect=OSError("no config")):
                 notify()
-        assert any("not configured" in r.message or "failed" in r.message for r in caplog.records)
+        assert any(
+            "not configured" in r.message or "failed" in r.message
+            for r in caplog.records
+        )

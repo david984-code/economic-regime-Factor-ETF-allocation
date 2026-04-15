@@ -28,7 +28,9 @@ def main() -> None:
     # Load data
     # ----------------------
     if not INPUT_CSV.exists():
-        raise FileNotFoundError(f"Missing {INPUT_CSV}. Run `python -m src.optimizer` first.")
+        raise FileNotFoundError(
+            f"Missing {INPUT_CSV}. Run `python -m src.optimizer` first."
+        )
 
     df = pd.read_csv(INPUT_CSV)
 
@@ -85,7 +87,9 @@ def main() -> None:
 
     # Percentage formatting
     percent_format = "0." + ("0" * PCT_DECIMALS) + "%"
-    for row in ws.iter_rows(min_row=2, min_col=2, max_row=ws.max_row, max_col=ws.max_column):
+    for row in ws.iter_rows(
+        min_row=2, min_col=2, max_row=ws.max_row, max_col=ws.max_column
+    ):
         for cell in row:
             if isinstance(cell.value, (int, float, np.floating)):
                 cell.number_format = percent_format

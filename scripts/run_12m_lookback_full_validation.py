@@ -23,34 +23,37 @@ logging.basicConfig(level=logging.WARNING)
 FULL_START = "2010-01-01"
 FULL_END = None  # use today
 
-SHARED_KWARGS = dict(
-    start=FULL_START,
-    end=FULL_END,
-    min_train_months=60,
-    test_months=12,
-    expanding=True,
-    use_stagflation_override=False,
-    use_stagflation_risk_on_cap=False,
-    use_regime_smoothing=False,
-    use_hybrid_signal=True,
-    hybrid_macro_weight=0.0,
-    use_momentum=True,
-    trend_filter_type="none",
-    vol_scaling_method="none",
-    portfolio_construction_method="equal_weight",
-    momentum_12m_weight=0.0,
-    quarterly_rebalance=False,
-    fast_mode=False,
-    skip_persist=True,
-    use_vol_regime=False,
-)
+SHARED_KWARGS = {
+    "start": FULL_START,
+    "end": FULL_END,
+    "min_train_months": 60,
+    "test_months": 12,
+    "expanding": True,
+    "use_stagflation_override": False,
+    "use_stagflation_risk_on_cap": False,
+    "use_regime_smoothing": False,
+    "use_hybrid_signal": True,
+    "hybrid_macro_weight": 0.0,
+    "use_momentum": True,
+    "trend_filter_type": "none",
+    "vol_scaling_method": "none",
+    "portfolio_construction_method": "equal_weight",
+    "momentum_12m_weight": 0.0,
+    "quarterly_rebalance": False,
+    "fast_mode": False,
+    "skip_persist": True,
+    "use_vol_regime": False,
+}
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _sortino(rets: pd.Series, rf_daily: float = 0.0, periods_per_year: int = 252) -> float:
+
+def _sortino(
+    rets: pd.Series, rf_daily: float = 0.0, periods_per_year: int = 252
+) -> float:
     excess = (rets - rf_daily).dropna()
     if len(excess) < 5:
         return float("nan")
@@ -82,7 +85,7 @@ def _compute_risk_on(spy_monthly: pd.Series, lookback: int) -> tuple:
     min_history = max(lookback, 12)
     z = raw_s.copy()
     for i in range(n):
-        trailing = raw_s.iloc[:i + 1].dropna()
+        trailing = raw_s.iloc[: i + 1].dropna()
         if len(trailing) >= min_history:
             z.iloc[i] = (raw_s.iloc[i] - trailing.mean()) / trailing.std()
         else:
@@ -92,8 +95,11 @@ def _compute_risk_on(spy_monthly: pd.Series, lookback: int) -> tuple:
     return risk_on, raw_s, z
 
 
-def _filter_segments(segs: pd.DataFrame, year_start: int, year_end: int) -> pd.DataFrame:
+def _filter_segments(
+    segs: pd.DataFrame, year_start: int, year_end: int
+) -> pd.DataFrame:
     """Keep segments whose test period overlaps [year_start, year_end]."""
+
     def overlaps(row):
         try:
             ts = pd.Period(row["test_start"], freq="M").year
@@ -101,6 +107,7 @@ def _filter_segments(segs: pd.DataFrame, year_start: int, year_end: int) -> pd.D
             return ts <= year_end and te >= year_start
         except Exception:
             return False
+
     mask = segs.apply(overlaps, axis=1)
     return segs[mask]
 
@@ -135,6 +142,7 @@ def _fmt_f(v: float, decimals: int = 3, sign: bool = False) -> str:
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main():
     print("=" * 72)
     print("FULL WALK-FORWARD VALIDATION: 12M vs 24M Continuous Mapped Momentum")
@@ -158,12 +166,14 @@ def main():
         v = ro[ro != neutral_val]
         return v.index[0].strftime("%Y-%m") if len(v) else "none"
 
-    print(f"\nPRE-RUN VERIFICATION")
+    print("\nPRE-RUN VERIFICATION")
     print("-" * 44)
     print(f"  First valid risk_on (24M): {_first_non_neutral(ro_24)}")
     print(f"  First valid risk_on (12M): {_first_non_neutral(ro_12)}")
-    print(f"  Price data range: {spy_monthly.index[0].strftime('%Y-%m')} to {spy_monthly.index[-1].strftime('%Y-%m')}")
-    print(f"  Parameter diff: ONLY market_lookback_months (24 vs 12)")
+    print(
+        f"  Price data range: {spy_monthly.index[0].strftime('%Y-%m')} to {spy_monthly.index[-1].strftime('%Y-%m')}"
+    )
+    print("  Parameter diff: ONLY market_lookback_months (24 vs 12)")
 
     # -- Run walk-forward validation -----------------------------------------
     print("\nRunning BASELINE (market_lookback_months=24)...")
@@ -211,22 +221,22 @@ def main():
         v = row.get(col, float("nan"))
         return float(v) if not isinstance(v, float) else v
 
-    cagr_b   = _m(ob, "Strategy_CAGR")
-    cagr_e   = _m(oe, "Strategy_CAGR")
+    cagr_b = _m(ob, "Strategy_CAGR")
+    cagr_e = _m(oe, "Strategy_CAGR")
     sharpe_b = _m(ob, "Strategy_Sharpe")
     sharpe_e = _m(oe, "Strategy_Sharpe")
-    maxdd_b  = _m(ob, "Strategy_MaxDD")
-    maxdd_e  = _m(oe, "Strategy_MaxDD")
-    vol_b    = _m(ob, "Strategy_Vol")
-    vol_e    = _m(oe, "Strategy_Vol")
-    to_b     = _m(ob, "Strategy_Turnover")
-    to_e     = _m(oe, "Strategy_Turnover")
+    maxdd_b = _m(ob, "Strategy_MaxDD")
+    maxdd_e = _m(oe, "Strategy_MaxDD")
+    vol_b = _m(ob, "Strategy_Vol")
+    vol_e = _m(oe, "Strategy_Vol")
+    to_b = _m(ob, "Strategy_Turnover")
+    to_e = _m(oe, "Strategy_Turnover")
 
-    cagr_d   = cagr_e - cagr_b
+    cagr_d = cagr_e - cagr_b
     sharpe_d = sharpe_e - sharpe_b
-    maxdd_d  = maxdd_e - maxdd_b
-    vol_d    = vol_e - vol_b
-    to_d     = to_e - to_b if not (np.isnan(to_b) or np.isnan(to_e)) else float("nan")
+    maxdd_d = maxdd_e - maxdd_b
+    vol_d = vol_e - vol_b
+    to_d = to_e - to_b if not (np.isnan(to_b) or np.isnan(to_e)) else float("nan")
     to_ratio = to_e / to_b if (not np.isnan(to_b) and to_b > 0) else float("nan")
 
     # =========================================================================
@@ -235,18 +245,32 @@ def main():
     print("=" * 72)
     print(f"  {'Metric':30} {'Baseline (24M)':>14} {'Exp (12M)':>12} {'Delta':>10}")
     print("  " + "-" * 68)
-    print(f"  {'CAGR':30} {_fmt(cagr_b):>14} {_fmt(cagr_e):>12} {_fmt(cagr_d, sign=True):>10}")
-    print(f"  {'Sharpe':30} {_fmt_f(sharpe_b):>14} {_fmt_f(sharpe_e):>12} {_fmt_f(sharpe_d, sign=True):>10}")
-    print(f"  {'MaxDD':30} {_fmt(maxdd_b):>14} {_fmt(maxdd_e):>12} {_fmt(maxdd_d, sign=True):>10}")
-    print(f"  {'Vol':30} {_fmt(vol_b):>14} {_fmt(vol_e):>12} {_fmt(vol_d, sign=True):>10}")
+    print(
+        f"  {'CAGR':30} {_fmt(cagr_b):>14} {_fmt(cagr_e):>12} {_fmt(cagr_d, sign=True):>10}"
+    )
+    print(
+        f"  {'Sharpe':30} {_fmt_f(sharpe_b):>14} {_fmt_f(sharpe_e):>12} {_fmt_f(sharpe_d, sign=True):>10}"
+    )
+    print(
+        f"  {'MaxDD':30} {_fmt(maxdd_b):>14} {_fmt(maxdd_e):>12} {_fmt(maxdd_d, sign=True):>10}"
+    )
+    print(
+        f"  {'Vol':30} {_fmt(vol_b):>14} {_fmt(vol_e):>12} {_fmt(vol_d, sign=True):>10}"
+    )
     if not np.isnan(to_b):
-        print(f"  {'Turnover':30} {_fmt(to_b):>14} {_fmt(to_e):>12} {_fmt(to_d, sign=True):>10}")
+        print(
+            f"  {'Turnover':30} {_fmt(to_b):>14} {_fmt(to_e):>12} {_fmt(to_d, sign=True):>10}"
+        )
     else:
         print(f"  {'Turnover':30} {'n/a':>14} {'n/a':>12} {'n/a':>10}")
     print(f"  {'Sortino':30} {'[see note]':>14} {'[see note]':>12} {'n/a':>10}")
     print()
-    print("  Note: Sortino not in walk-forward output; Sharpe is the primary risk-adj metric.")
-    print("  Note: Metrics are mean of per-segment OOS results (standard walk-forward convention).")
+    print(
+        "  Note: Sortino not in walk-forward output; Sharpe is the primary risk-adj metric."
+    )
+    print(
+        "  Note: Metrics are mean of per-segment OOS results (standard walk-forward convention)."
+    )
 
     # =========================================================================
     print("\n" + "=" * 72)
@@ -262,7 +286,9 @@ def main():
         ("2023-present", 2023, 2030, "full OOS coverage"),
     ]
 
-    print(f"  {'Subperiod':15} {'B_CAGR':>8} {'E_CAGR':>8} {'dCAGR':>7} {'B_Sharpe':>9} {'E_Sharpe':>9} {'dSharpe':>8} {'B_MaxDD':>8} {'E_MaxDD':>8} {'Segs':>5} {'Note'}")
+    print(
+        f"  {'Subperiod':15} {'B_CAGR':>8} {'E_CAGR':>8} {'dCAGR':>7} {'B_Sharpe':>9} {'E_Sharpe':>9} {'dSharpe':>8} {'B_MaxDD':>8} {'E_MaxDD':>8} {'Segs':>5} {'Note'}"
+    )
     print("  " + "-" * 120)
 
     for name, y0, y1, note in subperiods:
@@ -270,7 +296,9 @@ def main():
         se = _filter_segments(segs_e, y0, y1)
         n_b = len(sb)
         if n_b == 0:
-            print(f"  {name:15} {'--':>8} {'--':>8} {'--':>7} {'--':>9} {'--':>9} {'--':>8} {'--':>8} {'--':>8} {0:>5}  {note}")
+            print(
+                f"  {name:15} {'--':>8} {'--':>8} {'--':>7} {'--':>9} {'--':>9} {'--':>8} {'--':>8} {'--':>8} {0:>5}  {note}"
+            )
             continue
         bc = _mean_metric(sb, "Strategy_CAGR")
         ec = _mean_metric(se, "Strategy_CAGR")
@@ -280,9 +308,11 @@ def main():
         edd = _mean_metric(se, "Strategy_MaxDD")
         dc = ec - bc
         ds = es - bs
-        print(f"  {name:15} {_fmt(bc):>8} {_fmt(ec):>8} {_fmt(dc,sign=True):>7} "
-              f"{_fmt_f(bs):>9} {_fmt_f(es):>9} {_fmt_f(ds,sign=True):>8} "
-              f"{_fmt(bdd):>8} {_fmt(edd):>8} {n_b:>5}  {note}")
+        print(
+            f"  {name:15} {_fmt(bc):>8} {_fmt(ec):>8} {_fmt(dc, sign=True):>7} "
+            f"{_fmt_f(bs):>9} {_fmt_f(es):>9} {_fmt_f(ds, sign=True):>8} "
+            f"{_fmt(bdd):>8} {_fmt(edd):>8} {n_b:>5}  {note}"
+        )
 
     # =========================================================================
     print("\n" + "=" * 72)
@@ -294,7 +324,15 @@ def main():
             "name": "2008 Global Financial Crisis",
             "peak": "2007-10",
             "trough": "2009-03",
-            "key_months": ["2007-10", "2008-03", "2008-09", "2008-10", "2008-11", "2009-03", "2009-06"],
+            "key_months": [
+                "2007-10",
+                "2008-03",
+                "2008-09",
+                "2008-10",
+                "2008-11",
+                "2009-03",
+                "2009-06",
+            ],
             "note": "In training period -- signal behavior shown, no OOS P&L available",
         },
         {
@@ -308,7 +346,14 @@ def main():
             "name": "2018 Q4 Crash",
             "peak": "2018-09",
             "trough": "2018-12",
-            "key_months": ["2018-08", "2018-09", "2018-10", "2018-11", "2018-12", "2019-01"],
+            "key_months": [
+                "2018-08",
+                "2018-09",
+                "2018-10",
+                "2018-11",
+                "2018-12",
+                "2019-01",
+            ],
             "note": "May be OOS depending on segment structure",
         },
         {
@@ -322,22 +367,32 @@ def main():
             "name": "2022 Rate Shock",
             "peak": "2022-01",
             "trough": "2022-10",
-            "key_months": ["2021-12", "2022-01", "2022-03", "2022-06", "2022-09", "2022-10", "2022-12"],
+            "key_months": [
+                "2021-12",
+                "2022-01",
+                "2022-03",
+                "2022-06",
+                "2022-09",
+                "2022-10",
+                "2022-12",
+            ],
             "note": "OOS in full validation",
         },
     ]
 
     for ev in crisis_events:
         print(f"\n  {ev['name']}  [{ev['note']}]")
-        print(f"  {'Month':10} {'24M risk_on':>12} {'12M risk_on':>12} {'Delta':>10} {'Signal direction'}")
+        print(
+            f"  {'Month':10} {'24M risk_on':>12} {'12M risk_on':>12} {'Delta':>10} {'Signal direction'}"
+        )
         print("  " + "-" * 62)
         for m in ev["key_months"]:
             r24 = _get_month(ro_24, m)
             r12 = _get_month(ro_12, m)
-            d   = r12 - r24 if not (np.isnan(r24) or np.isnan(r12)) else float("nan")
+            d = r12 - r24 if not (np.isnan(r24) or np.isnan(r12)) else float("nan")
             r24s = _fmt_f(r24) if not np.isnan(r24) else "n/a"
             r12s = _fmt_f(r12) if not np.isnan(r12) else "n/a"
-            ds   = _fmt_f(d, sign=True) if not np.isnan(d) else "n/a"
+            ds = _fmt_f(d, sign=True) if not np.isnan(d) else "n/a"
             if np.isnan(d):
                 direction = "no data"
             elif abs(d) < 0.01:
@@ -356,7 +411,7 @@ def main():
     print("=" * 72)
     r24c = ro_24.dropna()
     r12c = ro_12.dropna()
-    spy_ret_m = spy_monthly.pct_change().dropna()
+    spy_monthly.pct_change().dropna()
 
     print(f"  {'Metric':40} {'Baseline (24M)':>14} {'Exp (12M)':>14}")
     print("  " + "-" * 70)
@@ -364,14 +419,24 @@ def main():
     print(f"  {'Std risk_on':40} {r24c.std():>14.3f} {r12c.std():>14.3f}")
     print(f"  {'Min risk_on':40} {r24c.min():>14.3f} {r12c.min():>14.3f}")
     print(f"  {'Max risk_on':40} {r24c.max():>14.3f} {r12c.max():>14.3f}")
-    print(f"  {'% months risk_on < 0.35 (defensive)':40} {(r24c < 0.35).mean():>14.1%} {(r12c < 0.35).mean():>14.1%}")
-    print(f"  {'% months risk_on < 0.40':40} {(r24c < 0.40).mean():>14.1%} {(r12c < 0.40).mean():>14.1%}")
-    print(f"  {'% months risk_on > 0.60':40} {(r24c > 0.60).mean():>14.1%} {(r12c > 0.60).mean():>14.1%}")
-    print(f"  {'% months risk_on > 0.65 (aggressive)':40} {(r24c > 0.65).mean():>14.1%} {(r12c > 0.65).mean():>14.1%}")
+    print(
+        f"  {'% months risk_on < 0.35 (defensive)':40} {(r24c < 0.35).mean():>14.1%} {(r12c < 0.35).mean():>14.1%}"
+    )
+    print(
+        f"  {'% months risk_on < 0.40':40} {(r24c < 0.40).mean():>14.1%} {(r12c < 0.40).mean():>14.1%}"
+    )
+    print(
+        f"  {'% months risk_on > 0.60':40} {(r24c > 0.60).mean():>14.1%} {(r12c > 0.60).mean():>14.1%}"
+    )
+    print(
+        f"  {'% months risk_on > 0.65 (aggressive)':40} {(r24c > 0.65).mean():>14.1%} {(r12c > 0.65).mean():>14.1%}"
+    )
     neutral_lo, neutral_hi = 0.45, 0.55
     b_neutral = ((r24c >= neutral_lo) & (r24c <= neutral_hi)).mean()
     e_neutral = ((r12c >= neutral_lo) & (r12c <= neutral_hi)).mean()
-    print(f"  {'% months neutral [0.45, 0.55]':40} {b_neutral:>14.1%} {e_neutral:>14.1%}")
+    print(
+        f"  {'% months neutral [0.45, 0.55]':40} {b_neutral:>14.1%} {e_neutral:>14.1%}"
+    )
 
     # =========================================================================
     print("\n" + "=" * 72)
@@ -380,7 +445,7 @@ def main():
 
     def _crossings_by_year(z: pd.Series) -> dict:
         clean = z.dropna()
-        sign  = np.sign(clean)
+        sign = np.sign(clean)
         cross = (sign != sign.shift(1)).astype(int)
         cross.iloc[0] = 0
         return cross.groupby(cross.index.year).sum().to_dict()
@@ -389,7 +454,7 @@ def main():
     cx_12 = _crossings_by_year(z_12)
     all_yrs = sorted(set(cx_24) | set(cx_12))
 
-    print(f"  Z-score sign crossings per year (proxy for regime flips):")
+    print("  Z-score sign crossings per year (proxy for regime flips):")
     print(f"  {'Year':6} {'24M':>8} {'12M':>8} {'Delta':>8}")
     print("  " + "-" * 32)
     tot_24 = tot_12 = 0
@@ -412,7 +477,7 @@ def main():
         neg = window[window < 0]
         return neg.index[0].strftime("%Y-%m") if len(neg) > 0 else "never"
 
-    print(f"\n  First z-score < 0 (risk-off lean) by crisis:")
+    print("\n  First z-score < 0 (risk-off lean) by crisis:")
     print(f"  {'Crisis':25} {'24M':>10} {'12M':>10} {'12M leads?'}")
     print("  " + "-" * 52)
     crisis_lag = [
@@ -447,7 +512,7 @@ def main():
     print("=" * 72)
 
     if not np.isnan(to_b):
-        print(f"  Full-period annualized turnover:")
+        print("  Full-period annualized turnover:")
         print(f"    Baseline (24M):   {to_b:.2%}")
         print(f"    Experiment (12M): {to_e:.2%}")
         print(f"    Delta:            {to_d:+.2%}")
@@ -455,15 +520,19 @@ def main():
 
     # Per-segment turnover
     if "Strategy_Turnover" in segs_b.columns:
-        print(f"\n  Per-segment turnover:")
-        print(f"  {'Segment':10} {'Test Period':22} {'Baseline TO':>12} {'Exp TO':>10} {'Delta':>8}")
+        print("\n  Per-segment turnover:")
+        print(
+            f"  {'Segment':10} {'Test Period':22} {'Baseline TO':>12} {'Exp TO':>10} {'Delta':>8}"
+        )
         print("  " + "-" * 66)
-        for (_, rb), (_, re) in zip(segs_b.iterrows(), segs_e.iterrows()):
+        for (_, rb), (_, re) in zip(segs_b.iterrows(), segs_e.iterrows(), strict=False):
             period = f"{rb['test_start']} to {rb['test_end']}"
             tb = rb.get("Strategy_Turnover", float("nan"))
             te = re.get("Strategy_Turnover", float("nan"))
             td = te - tb if not (np.isnan(tb) or np.isnan(te)) else float("nan")
-            print(f"  {int(rb['segment']):>10} {period:22} {_fmt(tb):>12} {_fmt(te):>10} {_fmt(td, sign=True):>8}")
+            print(
+                f"  {int(rb['segment']):>10} {period:22} {_fmt(tb):>12} {_fmt(te):>10} {_fmt(td, sign=True):>8}"
+            )
 
     # Is turnover increase concentrated?
     # Proxy: check if z-score crossings cluster in high-vol periods
@@ -473,23 +542,25 @@ def main():
 
     def _crossing_dates(z: pd.Series) -> list:
         clean = z.dropna()
-        sign  = np.sign(clean)
+        sign = np.sign(clean)
         cross_mask = sign != sign.shift(1)
         cross_mask.iloc[0] = False
         return list(cross_mask[cross_mask].index)
 
-    cx_dates_24 = _crossing_dates(z_24)
+    _crossing_dates(z_24)
     cx_dates_12 = _crossing_dates(z_12)
     cx12_in_hv = sum(1 for d in cx_dates_12 if d in high_vol_months)
     pct_in_hv = cx12_in_hv / len(cx_dates_12) if cx_dates_12 else float("nan")
 
-    print(f"\n  Turnover concentration analysis:")
+    print("\n  Turnover concentration analysis:")
     print(f"    12M total z-crossings: {len(cx_dates_12)}")
-    print(f"    12M crossings in high-vol months (top quartile realized vol): {cx12_in_hv} ({pct_in_hv:.0%})")
+    print(
+        f"    12M crossings in high-vol months (top quartile realized vol): {cx12_in_hv} ({pct_in_hv:.0%})"
+    )
     if pct_in_hv > 0.6:
-        print(f"    -> Turnover is concentrated in volatile regimes (expected)")
+        print("    -> Turnover is concentrated in volatile regimes (expected)")
     else:
-        print(f"    -> Turnover is spread across market regimes")
+        print("    -> Turnover is spread across market regimes")
 
     # =========================================================================
     print("\n" + "=" * 72)
@@ -520,15 +591,17 @@ def main():
 
     print()
     # Assess recency concentration
-    recent_periods = [n for n, b, d in periods_with_data if b and ("2023" in n or "2018" in n)]
-    older_periods  = [n for n, b, d in periods_with_data if b and "2013" in n]
+    [n for n, b, d in periods_with_data if b and ("2023" in n or "2018" in n)]
+    [n for n, b, d in periods_with_data if b and "2013" in n]
 
     if n_beat == n_total:
         robustness = "IMPROVEMENT IS BROAD: 12M outperforms 24M across all available OOS subperiods."
     elif n_beat >= n_total * 0.67:
         robustness = f"IMPROVEMENT IS MOSTLY BROAD: 12M wins in {n_beat}/{n_total} subperiods. Check if losses are in high-stress periods."
     elif n_beat == n_total - 1:
-        robustness = "MOSTLY BROAD with one subperiod exception. Identify which period and why."
+        robustness = (
+            "MOSTLY BROAD with one subperiod exception. Identify which period and why."
+        )
     else:
         robustness = f"IMPROVEMENT IS CONCENTRATED: 12M only wins in {n_beat}/{n_total} subperiods. Likely recency bias."
 
@@ -539,22 +612,30 @@ def main():
         d12 = _first_z_cross_below_zero(z_12, after, before)
         d24 = _first_z_cross_below_zero(z_24, after, before)
         if d12 != "never" and d24 == "never":
-            crisis_check.append(f"  12M responded defensively in {ev_name} while 24M did not")
+            crisis_check.append(
+                f"  12M responded defensively in {ev_name} while 24M did not"
+            )
         elif d12 != "never" and d24 != "never":
             t24 = pd.Timestamp(d24 + "-01")
             t12 = pd.Timestamp(d12 + "-01")
             lag = (t24.year - t12.year) * 12 + (t24.month - t12.month)
             if lag > 0:
-                crisis_check.append(f"  12M turned defensive {lag}m earlier in {ev_name}")
+                crisis_check.append(
+                    f"  12M turned defensive {lag}m earlier in {ev_name}"
+                )
             elif lag < 0:
-                crisis_check.append(f"  12M turned defensive {-lag}m LATER in {ev_name} (worse)")
+                crisis_check.append(
+                    f"  12M turned defensive {-lag}m LATER in {ev_name} (worse)"
+                )
 
     if crisis_check:
         print("\n  Crisis responsiveness:")
         for c in crisis_check:
             print(c)
     else:
-        print("\n  Crisis responsiveness: 12M and 24M responded similarly in all tested crises.")
+        print(
+            "\n  Crisis responsiveness: 12M and 24M responded similarly in all tested crises."
+        )
 
     # =========================================================================
     print("\n" + "=" * 72)
@@ -562,10 +643,9 @@ def main():
     print("=" * 72)
 
     # Kill switch
-    ks_sharpe = sharpe_d < 0.02
-    ks_cagr   = cagr_d < 0.0025
 
     difficult_years = {2020, 2022}
+
     def _in_diff(row):
         try:
             y0 = pd.Period(row["test_start"], freq="M").year
@@ -576,32 +656,52 @@ def main():
 
     mask_b = segs_b.apply(_in_diff, axis=1)
     mask_e = segs_e.apply(_in_diff, axis=1)
-    ds_b_diff = segs_b.loc[mask_b, "Strategy_Sharpe"].mean() if mask_b.any() else float("nan")
-    ds_e_diff = segs_e.loc[mask_e, "Strategy_Sharpe"].mean() if mask_e.any() else float("nan")
-    difficult_improved = (not np.isnan(ds_e_diff) and not np.isnan(ds_b_diff) and ds_e_diff > ds_b_diff)
+    ds_b_diff = (
+        segs_b.loc[mask_b, "Strategy_Sharpe"].mean() if mask_b.any() else float("nan")
+    )
+    ds_e_diff = (
+        segs_e.loc[mask_e, "Strategy_Sharpe"].mean() if mask_e.any() else float("nan")
+    )
+    difficult_improved = (
+        not np.isnan(ds_e_diff) and not np.isnan(ds_b_diff) and ds_e_diff > ds_b_diff
+    )
 
-    high_churn_crossing = (tot_24 > 0 and tot_12 > 1.5 * tot_24)
-    high_churn_to = (not np.isnan(to_ratio) and to_ratio > 1.5)
+    high_churn_crossing = tot_24 > 0 and tot_12 > 1.5 * tot_24
+    high_churn_to = not np.isnan(to_ratio) and to_ratio > 1.5
     high_churn = high_churn_crossing or high_churn_to
     sharpe_thresh = 0.04 if high_churn else 0.02
 
     esc_sharpe = sharpe_d >= sharpe_thresh
-    esc_cagr   = cagr_d >= 0.0025
-    esc_maxdd  = maxdd_d > 0.01
-    esc_diff   = difficult_improved
+    esc_cagr = cagr_d >= 0.0025
+    esc_maxdd = maxdd_d > 0.01
+    esc_diff = difficult_improved
     passes = esc_sharpe or esc_cagr or esc_maxdd or esc_diff
 
-    print(f"  Screening thresholds:")
-    print(f"    High churn flag:       {'YES (threshold = +0.04)' if high_churn else 'NO  (threshold = +0.02)'}")
-    print(f"    Sharpe delta:          {sharpe_d:+.3f}  (need >= {sharpe_thresh:.2f})  {'PASS' if esc_sharpe else 'FAIL'}")
-    print(f"    CAGR delta:            {cagr_d:+.2%}  (need >= +0.25%)  {'PASS' if esc_cagr else 'FAIL'}")
-    print(f"    MaxDD delta:           {maxdd_d:+.2%}  (need > +1.0%)  {'PASS' if esc_maxdd else 'FAIL'}")
+    print("  Screening thresholds:")
+    print(
+        f"    High churn flag:       {'YES (threshold = +0.04)' if high_churn else 'NO  (threshold = +0.02)'}"
+    )
+    print(
+        f"    Sharpe delta:          {sharpe_d:+.3f}  (need >= {sharpe_thresh:.2f})  {'PASS' if esc_sharpe else 'FAIL'}"
+    )
+    print(
+        f"    CAGR delta:            {cagr_d:+.2%}  (need >= +0.25%)  {'PASS' if esc_cagr else 'FAIL'}"
+    )
+    print(
+        f"    MaxDD delta:           {maxdd_d:+.2%}  (need > +1.0%)  {'PASS' if esc_maxdd else 'FAIL'}"
+    )
     b_diff_str = f"{ds_b_diff:.3f}" if not np.isnan(ds_b_diff) else "n/a"
     e_diff_str = f"{ds_e_diff:.3f}" if not np.isnan(ds_e_diff) else "n/a"
-    print(f"    Difficult-period Sharpe: baseline={b_diff_str}, exp={e_diff_str}  {'PASS' if esc_diff else 'FAIL'}")
+    print(
+        f"    Difficult-period Sharpe: baseline={b_diff_str}, exp={e_diff_str}  {'PASS' if esc_diff else 'FAIL'}"
+    )
     print()
     print(f"  Subperiod breadth:  {n_beat}/{n_total} subperiods won by 12M")
-    print(f"  Turnover ratio:     {to_ratio:.2f}x baseline" if not np.isnan(to_ratio) else "  Turnover ratio: n/a")
+    print(
+        f"  Turnover ratio:     {to_ratio:.2f}x baseline"
+        if not np.isnan(to_ratio)
+        else "  Turnover ratio: n/a"
+    )
     print()
 
     if not passes:

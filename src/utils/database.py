@@ -114,7 +114,9 @@ class Database:
         df.set_index("date", inplace=True)
         return df
 
-    def save_optimal_allocations(self, allocations: dict[str, dict[str, float]]) -> None:
+    def save_optimal_allocations(
+        self, allocations: dict[str, dict[str, float]]
+    ) -> None:
         """Save optimal allocations to database."""
         rows = []
         for regime, weights in allocations.items():
@@ -130,11 +132,15 @@ class Database:
 
     def load_optimal_allocations(self) -> dict[str, dict[str, float]]:
         """Load optimal allocations from database."""
-        df = pd.read_sql("SELECT regime, asset, weight FROM optimal_allocations", self.conn)
+        df = pd.read_sql(
+            "SELECT regime, asset, weight FROM optimal_allocations", self.conn
+        )
         allocations: dict[str, dict[str, float]] = {}
         for regime in df["regime"].unique():
             regime_df = df[df["regime"] == regime]
-            allocations[regime] = dict(zip(regime_df["asset"], regime_df["weight"]))
+            allocations[regime] = dict(
+                zip(regime_df["asset"], regime_df["weight"], strict=False)
+            )
         return allocations
 
     def save_current_weights(self, date: str, weights: pd.Series) -> None:
@@ -142,7 +148,9 @@ class Database:
         cursor = self.conn.cursor()
         cursor.execute("DELETE FROM current_weights WHERE date = ?", (date,))
         self.conn.commit()
-        df = pd.DataFrame({"date": date, "asset": weights.index, "weight": weights.values})
+        df = pd.DataFrame(
+            {"date": date, "asset": weights.index, "weight": weights.values}
+        )
         df.to_sql("current_weights", self.conn, if_exists="append", index=False)
         self.conn.commit()
 
@@ -162,12 +170,20 @@ class Database:
             (forecast_date, target_month, risk_on_forecast, regime_forecast, accuracy_1m)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (forecast_date, target_month, risk_on_forecast, regime_forecast, accuracy_1m),
+            (
+                forecast_date,
+                target_month,
+                risk_on_forecast,
+                regime_forecast,
+                accuracy_1m,
+            ),
         )
         self.conn.commit()
         logger.info("Saved regime forecast for %s", target_month)
 
-    def load_latest_regime_forecast(self, target_month: str) -> dict[str, float | str | None] | None:
+    def load_latest_regime_forecast(
+        self, target_month: str
+    ) -> dict[str, float | str | None] | None:
         """Load most recent forecast for a target month."""
         df = pd.read_sql(
             """
@@ -184,10 +200,14 @@ class Database:
         return {
             "forecast_date": str(row["forecast_date"]),
             "risk_on_forecast": float(row["risk_on_forecast"]),
-            "regime_forecast": str(row["regime_forecast"]) if pd.notna(row["regime_forecast"]) else None,
+            "regime_forecast": str(row["regime_forecast"])
+            if pd.notna(row["regime_forecast"])
+            else None,
         }
 
-    def save_backtest_results(self, metrics: dict[str, float], bench_metrics: dict[str, float]) -> None:
+    def save_backtest_results(
+        self, metrics: dict[str, float], bench_metrics: dict[str, float]
+    ) -> None:
         """Save backtest performance metrics."""
         cursor = self.conn.cursor()
         cursor.execute(

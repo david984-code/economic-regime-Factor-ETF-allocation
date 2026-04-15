@@ -85,7 +85,9 @@ def _load_regime_status() -> dict[str, Any]:
         prev = df.iloc[-2] if len(df) >= 2 else latest
         result: dict[str, Any] = {
             "regime": str(latest["regime"]),
-            "risk_on": float(latest["risk_on"]) if pd.notna(latest["risk_on"]) else None,
+            "risk_on": float(latest["risk_on"])
+            if pd.notna(latest["risk_on"])
+            else None,
             "prev_regime": str(prev["regime"]),
             "regime_changed": str(latest["regime"]) != str(prev["regime"]),
         }

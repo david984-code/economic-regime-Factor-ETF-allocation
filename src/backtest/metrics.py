@@ -37,11 +37,7 @@ def compute_metrics(
 
     cagr = float(equity_curve.iloc[-1] ** (1 / years) - 1)
     volatility = float(rets.std() * np.sqrt(252))
-    sharpe = (
-        (mean_daily / std_daily) * np.sqrt(252)
-        if std_daily != 0
-        else float("nan")
-    )
+    sharpe = (mean_daily / std_daily) * np.sqrt(252) if std_daily != 0 else float("nan")
 
     drawdown = equity_curve / equity_curve.cummax() - 1
     max_dd = float(drawdown.min())

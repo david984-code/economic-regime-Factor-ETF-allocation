@@ -11,15 +11,15 @@ import numpy as np
 import pandas as pd
 
 from src.config import (
-    OUTPUTS_DIR,
-    TICKERS,
     ASSETS,
-    TICKERS_EXPANDED,
     ASSETS_EXPANDED,
-    RISK_ON_ASSETS_BASE,
+    OUTPUTS_DIR,
     RISK_OFF_ASSETS_BASE,
-    RISK_ON_ASSETS_EXPANDED,
     RISK_OFF_ASSETS_EXPANDED,
+    RISK_ON_ASSETS_BASE,
+    RISK_ON_ASSETS_EXPANDED,
+    TICKERS,
+    TICKERS_EXPANDED,
 )
 from src.evaluation.walk_forward import run_walk_forward_evaluation
 
@@ -42,7 +42,7 @@ def _run_experiment(
     logger.info(f"Total assets: {len(tickers)}")
     logger.info(f"Risk-on sleeve: {len(risk_on_sleeve)} assets")
     logger.info(f"Risk-off sleeve: {len(risk_off_sleeve)} assets")
-    
+
     df = run_walk_forward_evaluation(
         min_train_months=60,
         test_months=12,
@@ -73,19 +73,20 @@ def _run_experiment(
 def _difficult_period_metrics(df: pd.DataFrame) -> dict:
     """Extract 2021-2022 period metrics."""
     test_segments = df[df["segment"] != "OVERALL"].copy()
-    
+
     if test_segments.empty:
         return {}
-    
+
     difficult_segments = []
     for _, row in test_segments.iterrows():
         test_start = pd.Period(row["test_start"], freq="M").to_timestamp()
         test_end = pd.Period(row["test_end"], freq="M").to_timestamp()
-        
-        if (test_start.year >= 2021 and test_start.year <= 2022) or \
-           (test_end.year >= 2021 and test_end.year <= 2022):
+
+        if (test_start.year >= 2021 and test_start.year <= 2022) or (
+            test_end.year >= 2021 and test_end.year <= 2022
+        ):
             difficult_segments.append(row)
-    
+
     if not difficult_segments:
         return {
             "n_difficult": 0,
@@ -93,9 +94,9 @@ def _difficult_period_metrics(df: pd.DataFrame) -> dict:
             "difficult_sharpe": np.nan,
             "difficult_maxdd": np.nan,
         }
-    
+
     difficult_df = pd.DataFrame(difficult_segments)
-    
+
     return {
         "n_difficult": len(difficult_df),
         "difficult_cagr": difficult_df["Strategy_CAGR"].mean(),
@@ -109,7 +110,7 @@ def main():
     logger.info("Starting expanded universe experiment")
     logger.info("Fixed: 24M momentum + equal-weight sleeves")
     logger.info("")
-    
+
     # Universe definitions
     universes = [
         {
@@ -127,17 +128,17 @@ def main():
             "risk_off": RISK_OFF_ASSETS_EXPANDED,
         },
     ]
-    
+
     # === PHASE 1: Fast mode screening ===
     logger.info("=" * 80)
     logger.info("PHASE 1: FAST MODE SCREENING")
     logger.info("=" * 80)
     logger.info("Recent 8 years, max 20 segments, no persistence")
     logger.info("")
-    
+
     fast_start = time.perf_counter()
     fast_results = []
-    
+
     for config in universes:
         df = _run_experiment(
             universe_name=config["name"],
@@ -147,14 +148,14 @@ def main():
             risk_off_sleeve=config["risk_off"],
             fast_mode=True,
         )
-        
+
         if df.empty:
             logger.error(f"Experiment failed for {config['name']}")
             continue
-        
+
         overall = df[df["segment"] == "OVERALL"].iloc[0]
         difficult = _difficult_period_metrics(df)
-        
+
         result = {
             "universe": config["name"],
             "n_assets": len(config["tickers"]),
@@ -170,15 +171,15 @@ def main():
             "difficult_maxdd": difficult.get("difficult_maxdd", np.nan),
         }
         fast_results.append(result)
-    
+
     fast_elapsed = (time.perf_counter() - fast_start) / 60
-    
+
     if not fast_results:
         logger.error("All fast mode experiments failed.")
         sys.exit(1)
-    
+
     fast_df = pd.DataFrame(fast_results)
-    
+
     logger.info("")
     logger.info("=" * 80)
     logger.info("FAST MODE RESULTS")
@@ -187,30 +188,32 @@ def main():
     logger.info("")
     logger.info("| Universe | CAGR | Sharpe | MaxDD | Turnover |")
     logger.info("|----------|------|--------|-------|----------|")
-    
+
     for _, row in fast_df.iterrows():
         logger.info(
             f"| {row['universe']:>30} | {row['cagr']:>4.2%} | {row['sharpe']:>6.3f} | "
             f"{row['maxdd']:>5.2%} | {row['turnover']:>8.1%} |"
         )
-    
+
     logger.info("")
-    
+
     # Check if expanded universe is promising
     baseline_fast = fast_df[fast_df["universe"] == "Baseline (10 assets)"].iloc[0]
-    expanded_fast = fast_df[fast_df["universe"] == "Expanded (21 assets + sectors)"].iloc[0]
-    
+    expanded_fast = fast_df[
+        fast_df["universe"] == "Expanded (21 assets + sectors)"
+    ].iloc[0]
+
     sharpe_improvement = expanded_fast["sharpe"] - baseline_fast["sharpe"]
     cagr_improvement = expanded_fast["cagr"] - baseline_fast["cagr"]
-    
+
     logger.info("FAST MODE COMPARISON:")
     logger.info(f"  Sharpe improvement: {sharpe_improvement:+.3f}")
     logger.info(f"  CAGR improvement: {cagr_improvement:+.2%}")
     logger.info("")
-    
+
     # Decision: run full validation if promising
     run_full_validation = sharpe_improvement > 0.02 or cagr_improvement > 0.01
-    
+
     if not run_full_validation:
         logger.info("=" * 80)
         logger.info("DECISION: SKIP FULL VALIDATION")
@@ -218,11 +221,11 @@ def main():
         logger.info("Fast mode shows marginal or negative improvement.")
         logger.info("Expanded universe does not appear promising.")
         logger.info("")
-        
+
         # Generate fast-mode-only report
         _generate_report(fast_df, None, fast_elapsed, 0, run_full_validation=False)
         return
-    
+
     # === PHASE 2: Full validation ===
     logger.info("=" * 80)
     logger.info("PHASE 2: FULL VALIDATION")
@@ -230,10 +233,10 @@ def main():
     logger.info("Expanded universe shows promise in fast mode.")
     logger.info("Running full backtest (all segments, full history)...")
     logger.info("")
-    
+
     full_start = time.perf_counter()
     full_results = []
-    
+
     for config in universes:
         df = _run_experiment(
             universe_name=config["name"],
@@ -243,14 +246,14 @@ def main():
             risk_off_sleeve=config["risk_off"],
             fast_mode=False,
         )
-        
+
         if df.empty:
             logger.error(f"Full validation failed for {config['name']}")
             continue
-        
+
         overall = df[df["segment"] == "OVERALL"].iloc[0]
         difficult = _difficult_period_metrics(df)
-        
+
         result = {
             "universe": config["name"],
             "n_assets": len(config["tickers"]),
@@ -266,15 +269,15 @@ def main():
             "difficult_maxdd": difficult.get("difficult_maxdd", np.nan),
         }
         full_results.append(result)
-    
+
     full_elapsed = (time.perf_counter() - full_start) / 60
-    
+
     if not full_results:
         logger.error("All full validation experiments failed.")
         sys.exit(1)
-    
+
     full_df = pd.DataFrame(full_results)
-    
+
     logger.info("")
     logger.info("=" * 80)
     logger.info("FULL VALIDATION RESULTS")
@@ -283,17 +286,19 @@ def main():
     logger.info("")
     logger.info("| Universe | CAGR | Sharpe | MaxDD | Turnover |")
     logger.info("|----------|------|--------|-------|----------|")
-    
+
     for _, row in full_df.iterrows():
         logger.info(
             f"| {row['universe']:>30} | {row['cagr']:>4.2%} | {row['sharpe']:>6.3f} | "
             f"{row['maxdd']:>5.2%} | {row['turnover']:>8.1%} |"
         )
-    
+
     logger.info("")
-    
+
     # Generate report
-    _generate_report(fast_df, full_df, fast_elapsed, full_elapsed, run_full_validation=True)
+    _generate_report(
+        fast_df, full_df, fast_elapsed, full_elapsed, run_full_validation=True
+    )
 
 
 def _generate_report(
@@ -318,125 +323,137 @@ def _generate_report(
         "**Universes Tested:**",
         "",
     ]
-    
+
     baseline = fast_df[fast_df["universe"] == "Baseline (10 assets)"].iloc[0]
     expanded = fast_df[fast_df["universe"] == "Expanded (21 assets + sectors)"].iloc[0]
-    
-    report_lines.extend([
-        "### 1. Baseline Universe (10 assets)",
-        "",
-        "**Risk-on sleeve (7 assets):**",
-        "- SPY (S&P 500)",
-        "- MTUM (Momentum factor)",
-        "- VLUE (Value factor)",
-        "- QUAL (Quality factor)",
-        "- USMV (Minimum volatility factor)",
-        "- IJR (Small cap)",
-        "- VIG (Dividend growth)",
-        "",
-        "**Risk-off sleeve (3 assets):**",
-        "- IEF (7-10Y Treasuries)",
-        "- TLT (20+ Y Treasuries)",
-        "- GLD (Gold)",
-        "",
-        "### 2. Expanded Universe (21 assets)",
-        "",
-        "**Risk-on sleeve (18 assets):**",
-        "- All 7 baseline risk-on assets",
-        "- **Plus 11 sector ETFs:**",
-        "  - XLK (Technology)",
-        "  - XLF (Financials)",
-        "  - XLE (Energy)",
-        "  - XLV (Healthcare)",
-        "  - XLI (Industrials)",
-        "  - XLP (Consumer Staples)",
-        "  - XLY (Consumer Discretionary)",
-        "  - XLU (Utilities)",
-        "  - XLB (Materials)",
-        "  - XLRE (Real Estate)",
-        "  - XLC (Communication Services)",
-        "",
-        "**Risk-off sleeve (3 assets):**",
-        "- Same as baseline (IEF, TLT, GLD)",
-        "",
-        "## Phase 1: Fast Mode Screening",
-        "",
-        f"**Runtime:** {fast_elapsed:.1f} minutes",
-        "",
-        "| Universe | N Assets | Risk-On | Risk-Off | CAGR | Sharpe | MaxDD | Turnover |",
-        "|----------|----------|---------|----------|------|--------|-------|----------|",
-    ])
-    
+
+    report_lines.extend(
+        [
+            "### 1. Baseline Universe (10 assets)",
+            "",
+            "**Risk-on sleeve (7 assets):**",
+            "- SPY (S&P 500)",
+            "- MTUM (Momentum factor)",
+            "- VLUE (Value factor)",
+            "- QUAL (Quality factor)",
+            "- USMV (Minimum volatility factor)",
+            "- IJR (Small cap)",
+            "- VIG (Dividend growth)",
+            "",
+            "**Risk-off sleeve (3 assets):**",
+            "- IEF (7-10Y Treasuries)",
+            "- TLT (20+ Y Treasuries)",
+            "- GLD (Gold)",
+            "",
+            "### 2. Expanded Universe (21 assets)",
+            "",
+            "**Risk-on sleeve (18 assets):**",
+            "- All 7 baseline risk-on assets",
+            "- **Plus 11 sector ETFs:**",
+            "  - XLK (Technology)",
+            "  - XLF (Financials)",
+            "  - XLE (Energy)",
+            "  - XLV (Healthcare)",
+            "  - XLI (Industrials)",
+            "  - XLP (Consumer Staples)",
+            "  - XLY (Consumer Discretionary)",
+            "  - XLU (Utilities)",
+            "  - XLB (Materials)",
+            "  - XLRE (Real Estate)",
+            "  - XLC (Communication Services)",
+            "",
+            "**Risk-off sleeve (3 assets):**",
+            "- Same as baseline (IEF, TLT, GLD)",
+            "",
+            "## Phase 1: Fast Mode Screening",
+            "",
+            f"**Runtime:** {fast_elapsed:.1f} minutes",
+            "",
+            "| Universe | N Assets | Risk-On | Risk-Off | CAGR | Sharpe | MaxDD | Turnover |",
+            "|----------|----------|---------|----------|------|--------|-------|----------|",
+        ]
+    )
+
     for _, row in fast_df.iterrows():
         report_lines.append(
             f"| {row['universe']:>30} | {row['n_assets']:>8} | {row['n_risk_on']:>7} | "
             f"{row['n_risk_off']:>8} | {row['cagr']:>4.2%} | {row['sharpe']:>6.3f} | "
             f"{row['maxdd']:>5.2%} | {row['turnover']:>8.1%} |"
         )
-    
-    report_lines.extend([
-        "",
-        "### Fast Mode Comparison",
-        "",
-        f"**Baseline:** {baseline['sharpe']:.3f} Sharpe, {baseline['cagr']:.2%} CAGR",
-        f"**Expanded:** {expanded['sharpe']:.3f} Sharpe, {expanded['cagr']:.2%} CAGR",
-        "",
-        f"**Improvement:** {expanded['sharpe'] - baseline['sharpe']:+.3f} Sharpe, {expanded['cagr'] - baseline['cagr']:+.2%} CAGR",
-        "",
-    ])
-    
+
+    report_lines.extend(
+        [
+            "",
+            "### Fast Mode Comparison",
+            "",
+            f"**Baseline:** {baseline['sharpe']:.3f} Sharpe, {baseline['cagr']:.2%} CAGR",
+            f"**Expanded:** {expanded['sharpe']:.3f} Sharpe, {expanded['cagr']:.2%} CAGR",
+            "",
+            f"**Improvement:** {expanded['sharpe'] - baseline['sharpe']:+.3f} Sharpe, {expanded['cagr'] - baseline['cagr']:+.2%} CAGR",
+            "",
+        ]
+    )
+
     # Full validation results
     if run_full_validation and full_df is not None:
         baseline_full = full_df[full_df["universe"] == "Baseline (10 assets)"].iloc[0]
-        expanded_full = full_df[full_df["universe"] == "Expanded (21 assets + sectors)"].iloc[0]
-        
-        report_lines.extend([
-            "## Phase 2: Full Validation",
-            "",
-            f"**Runtime:** {full_elapsed:.1f} minutes",
-            "",
-            "| Universe | CAGR | Sharpe | MaxDD | Vol | Turnover |",
-            "|----------|------|--------|-------|-----|----------|",
-        ])
-        
+        expanded_full = full_df[
+            full_df["universe"] == "Expanded (21 assets + sectors)"
+        ].iloc[0]
+
+        report_lines.extend(
+            [
+                "## Phase 2: Full Validation",
+                "",
+                f"**Runtime:** {full_elapsed:.1f} minutes",
+                "",
+                "| Universe | CAGR | Sharpe | MaxDD | Vol | Turnover |",
+                "|----------|------|--------|-------|-----|----------|",
+            ]
+        )
+
         for _, row in full_df.iterrows():
             report_lines.append(
                 f"| {row['universe']:>30} | {row['cagr']:>4.2%} | {row['sharpe']:>6.3f} | "
                 f"{row['maxdd']:>5.2%} | {row['vol']:>3.2%} | {row['turnover']:>8.1%} |"
             )
-        
-        report_lines.extend([
-            "",
-            "### Full Validation Comparison",
-            "",
-            f"**Baseline:** {baseline_full['sharpe']:.3f} Sharpe, {baseline_full['cagr']:.2%} CAGR",
-            f"**Expanded:** {expanded_full['sharpe']:.3f} Sharpe, {expanded_full['cagr']:.2%} CAGR",
-            "",
-            f"**Improvement:** {expanded_full['sharpe'] - baseline_full['sharpe']:+.3f} Sharpe, "
-            f"{expanded_full['cagr'] - baseline_full['cagr']:+.2%} CAGR",
-            "",
-            "### Difficult Period Performance (2021-2022)",
-            "",
-            "| Universe | CAGR | Sharpe | MaxDD |",
-            "|----------|------|--------|-------|",
-        ])
-        
+
+        report_lines.extend(
+            [
+                "",
+                "### Full Validation Comparison",
+                "",
+                f"**Baseline:** {baseline_full['sharpe']:.3f} Sharpe, {baseline_full['cagr']:.2%} CAGR",
+                f"**Expanded:** {expanded_full['sharpe']:.3f} Sharpe, {expanded_full['cagr']:.2%} CAGR",
+                "",
+                f"**Improvement:** {expanded_full['sharpe'] - baseline_full['sharpe']:+.3f} Sharpe, "
+                f"{expanded_full['cagr'] - baseline_full['cagr']:+.2%} CAGR",
+                "",
+                "### Difficult Period Performance (2021-2022)",
+                "",
+                "| Universe | CAGR | Sharpe | MaxDD |",
+                "|----------|------|--------|-------|",
+            ]
+        )
+
         for _, row in full_df.iterrows():
             if not pd.isna(row["difficult_cagr"]):
                 report_lines.append(
                     f"| {row['universe']:>30} | {row['difficult_cagr']:>4.2%} | "
                     f"{row['difficult_sharpe']:>6.3f} | {row['difficult_maxdd']:>5.2%} |"
                 )
-        
-        report_lines.extend([
-            "",
-            "### Analysis",
-            "",
-        ])
-        
-        sharpe_imp_full = expanded_full['sharpe'] - baseline_full['sharpe']
-        turnover_diff_full = expanded_full['turnover'] - baseline_full['turnover']
-        
+
+        report_lines.extend(
+            [
+                "",
+                "### Analysis",
+                "",
+            ]
+        )
+
+        sharpe_imp_full = expanded_full["sharpe"] - baseline_full["sharpe"]
+        turnover_diff_full = expanded_full["turnover"] - baseline_full["turnover"]
+
         # Recommendation based on full validation
         if sharpe_imp_full > 0.03:
             verdict = "**ADOPT EXPANDED UNIVERSE**"
@@ -458,100 +475,132 @@ def _generate_report(
                 "- Implementation cost is low"
             )
         else:
-            verdict = "**KEEP BASELINE: Expanded universe does not improve performance**"
+            verdict = (
+                "**KEEP BASELINE: Expanded universe does not improve performance**"
+            )
             explanation = (
                 f"Expanded universe underperforms baseline by {sharpe_imp_full:+.3f} Sharpe.\n"
                 "Current 10-asset universe is optimal.\n"
                 "Sector ETFs add complexity without improving risk-adjusted returns."
             )
-        
+
         report_lines.append(verdict)
         report_lines.append("")
         report_lines.append(explanation)
         report_lines.append("")
-    
+
     else:
         # Fast mode only (no full validation)
-        report_lines.extend([
-            "## Fast Mode Decision",
-            "",
-        ])
-        
-        sharpe_imp_fast = expanded['sharpe'] - baseline['sharpe']
-        
+        report_lines.extend(
+            [
+                "## Fast Mode Decision",
+                "",
+            ]
+        )
+
+        sharpe_imp_fast = expanded["sharpe"] - baseline["sharpe"]
+
         verdict = "**SKIP FULL VALIDATION: No improvement in fast mode**"
         explanation = (
             f"Fast mode screening shows {sharpe_imp_fast:+.3f} Sharpe improvement.\n"
             "This is below the threshold (+0.02) for running full validation.\n"
             "Expanded universe does not appear to improve performance."
         )
-        
+
         report_lines.append(verdict)
         report_lines.append("")
         report_lines.append(explanation)
         report_lines.append("")
-    
+
     # Next experiment recommendations
-    report_lines.extend([
-        "## Next Experiment Recommendations",
-        "",
-    ])
-    
+    report_lines.extend(
+        [
+            "## Next Experiment Recommendations",
+            "",
+        ]
+    )
+
     if run_full_validation and full_df is not None:
         baseline_full = full_df[full_df["universe"] == "Baseline (10 assets)"].iloc[0]
-        expanded_full = full_df[full_df["universe"] == "Expanded (21 assets + sectors)"].iloc[0]
-        
+        expanded_full = full_df[
+            full_df["universe"] == "Expanded (21 assets + sectors)"
+        ].iloc[0]
+
         if expanded_full["sharpe"] > baseline_full["sharpe"] + 0.03:
-            report_lines.append("1. **Test alternative sector selection** - filter sectors by momentum or regime")
-            report_lines.append("2. **Test sector-specific sleeves** - create sector-rotational strategies")
-            report_lines.append("3. **Test dynamic universe** - vary sector inclusion by macro regime")
+            report_lines.append(
+                "1. **Test alternative sector selection** - filter sectors by momentum or regime"
+            )
+            report_lines.append(
+                "2. **Test sector-specific sleeves** - create sector-rotational strategies"
+            )
+            report_lines.append(
+                "3. **Test dynamic universe** - vary sector inclusion by macro regime"
+            )
         else:
-            report_lines.append("1. **Test alternative asset classes** - commodities, international, REITs")
-            report_lines.append("2. **Test rebalance frequency** - quarterly vs monthly (reduce turnover)")
-            report_lines.append("3. **Test regime-conditional universes** - vary assets by macro regime")
+            report_lines.append(
+                "1. **Test alternative asset classes** - commodities, international, REITs"
+            )
+            report_lines.append(
+                "2. **Test rebalance frequency** - quarterly vs monthly (reduce turnover)"
+            )
+            report_lines.append(
+                "3. **Test regime-conditional universes** - vary assets by macro regime"
+            )
     else:
-        report_lines.append("1. **Test alternative diversifiers** - international, commodities, alternatives")
+        report_lines.append(
+            "1. **Test alternative diversifiers** - international, commodities, alternatives"
+        )
         report_lines.append("2. **Test rebalance frequency** - quarterly vs monthly")
-        report_lines.append("3. **Test regime-conditional universes** - vary assets by macro regime")
-    
-    report_lines.append("4. **Test cross-sectional momentum** - rank assets by relative strength")
-    report_lines.append("5. **Test alternative signal horizons** - blend multiple momentum lookbacks")
-    
-    report_lines.extend([
-        "",
-        "## Summary",
-        "",
-        "### Fast Mode Performance",
-        "",
-        "| Universe | Assets | CAGR | Sharpe | MaxDD | Vol | Turnover | Difficult Sharpe |",
-        "|----------|--------|------|--------|-------|-----|----------|------------------|",
-    ])
-    
+        report_lines.append(
+            "3. **Test regime-conditional universes** - vary assets by macro regime"
+        )
+
+    report_lines.append(
+        "4. **Test cross-sectional momentum** - rank assets by relative strength"
+    )
+    report_lines.append(
+        "5. **Test alternative signal horizons** - blend multiple momentum lookbacks"
+    )
+
+    report_lines.extend(
+        [
+            "",
+            "## Summary",
+            "",
+            "### Fast Mode Performance",
+            "",
+            "| Universe | Assets | CAGR | Sharpe | MaxDD | Vol | Turnover | Difficult Sharpe |",
+            "|----------|--------|------|--------|-------|-----|----------|------------------|",
+        ]
+    )
+
     for _, row in fast_df.iterrows():
         report_lines.append(
             f"| {row['universe']:>30} | {row['n_assets']:>6} | {row['cagr']:>4.2%} | "
             f"{row['sharpe']:>6.3f} | {row['maxdd']:>5.2%} | {row['vol']:>3.2%} | "
             f"{row['turnover']:>8.1%} | {row['difficult_sharpe']:>16.3f} |"
         )
-    
+
     if run_full_validation and full_df is not None:
-        report_lines.extend([
-            "",
-            "### Full Validation Performance",
-            "",
-            "| Universe | Assets | CAGR | Sharpe | MaxDD | Vol | Turnover | Difficult Sharpe |",
-            "|----------|--------|------|--------|-------|-----|----------|------------------|",
-        ])
-        
+        report_lines.extend(
+            [
+                "",
+                "### Full Validation Performance",
+                "",
+                "| Universe | Assets | CAGR | Sharpe | MaxDD | Vol | Turnover | Difficult Sharpe |",
+                "|----------|--------|------|--------|-------|-----|----------|------------------|",
+            ]
+        )
+
         for _, row in full_df.iterrows():
             report_lines.append(
                 f"| {row['universe']:>30} | {row['n_assets']:>6} | {row['cagr']:>4.2%} | "
                 f"{row['sharpe']:>6.3f} | {row['maxdd']:>5.2%} | {row['vol']:>3.2%} | "
                 f"{row['turnover']:>8.1%} | {row['difficult_sharpe']:>16.3f} |"
             )
-    
+
     report = "\n".join(report_lines)
-    
+
     output_path = OUTPUTS_DIR / "EXPANDED_UNIVERSE_EXPERIMENT.md"
     output_path.write_text(report, encoding="utf-8")
     logger.info(f"Report saved to {output_path}")

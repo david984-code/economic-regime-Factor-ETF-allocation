@@ -12,8 +12,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
-import pandas as pd
-
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -81,11 +79,21 @@ def run_parity_check() -> int:
             print("OK: All regime labels match")
 
     # Latest regime
-    latest_no = df_no_cache.dropna(subset=["regime"]).iloc[-1] if df_no_cache["regime"].notna().any() else None
-    latest_cached = df_cached.dropna(subset=["regime"]).iloc[-1] if df_cached["regime"].notna().any() else None
+    latest_no = (
+        df_no_cache.dropna(subset=["regime"]).iloc[-1]
+        if df_no_cache["regime"].notna().any()
+        else None
+    )
+    latest_cached = (
+        df_cached.dropna(subset=["regime"]).iloc[-1]
+        if df_cached["regime"].notna().any()
+        else None
+    )
     if latest_no is not None and latest_cached is not None:
         if latest_no["regime"] != latest_cached["regime"]:
-            print(f"FAIL: Latest regime {latest_no['regime']} != {latest_cached['regime']}")
+            print(
+                f"FAIL: Latest regime {latest_no['regime']} != {latest_cached['regime']}"
+            )
             ok = False
         else:
             print(f"OK: Latest regime = {latest_no['regime']}")

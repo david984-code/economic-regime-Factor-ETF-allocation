@@ -27,12 +27,12 @@ def _run_experiment(
     logger.info("=" * 80)
     logger.info("RUNNING: %s", config_name)
     logger.info("=" * 80)
-    
+
     if use_vol_regime:
         logger.info(f"Volatility regime enabled: weight={vol_regime_weight:.2f}")
     else:
         logger.info("Volatility regime disabled (momentum only)")
-    
+
     df = run_walk_forward_evaluation(
         min_train_months=60,
         test_months=12,
@@ -62,19 +62,20 @@ def _run_experiment(
 def _difficult_period_metrics(df: pd.DataFrame) -> dict:
     """Extract 2021-2022 period metrics."""
     test_segments = df[df["segment"] != "OVERALL"].copy()
-    
+
     if test_segments.empty:
         return {}
-    
+
     difficult_segments = []
     for _, row in test_segments.iterrows():
         test_start = pd.Period(row["test_start"], freq="M").to_timestamp()
         test_end = pd.Period(row["test_end"], freq="M").to_timestamp()
-        
-        if (test_start.year >= 2021 and test_start.year <= 2022) or \
-           (test_end.year >= 2021 and test_end.year <= 2022):
+
+        if (test_start.year >= 2021 and test_start.year <= 2022) or (
+            test_end.year >= 2021 and test_end.year <= 2022
+        ):
             difficult_segments.append(row)
-    
+
     if not difficult_segments:
         return {
             "n_difficult": 0,
@@ -82,9 +83,9 @@ def _difficult_period_metrics(df: pd.DataFrame) -> dict:
             "difficult_sharpe": np.nan,
             "difficult_maxdd": np.nan,
         }
-    
+
     difficult_df = pd.DataFrame(difficult_segments)
-    
+
     return {
         "n_difficult": len(difficult_df),
         "difficult_cagr": difficult_df["Strategy_CAGR"].mean(),
@@ -99,16 +100,16 @@ def main():
     logger.info("Fixed: 24M momentum + equal-weight sleeves")
     logger.info("Testing: adding volatility regime to risk_on calculation")
     logger.info("")
-    
+
     # === PHASE 1: Fast mode screening ===
     logger.info("=" * 80)
     logger.info("PHASE 1: FAST MODE SCREENING")
     logger.info("=" * 80)
     logger.info("Recent 8 years, max 20 segments, no persistence")
     logger.info("")
-    
+
     fast_start = time.perf_counter()
-    
+
     # Test configurations
     configs = [
         {"name": "Baseline (momentum only)", "use_vol": False, "vol_weight": 0.0},
@@ -116,9 +117,9 @@ def main():
         {"name": "Momentum + Vol Regime (0.3)", "use_vol": True, "vol_weight": 0.3},
         {"name": "Momentum + Vol Regime (0.5)", "use_vol": True, "vol_weight": 0.5},
     ]
-    
+
     fast_results = []
-    
+
     for config in configs:
         df = _run_experiment(
             config_name=config["name"],
@@ -126,14 +127,14 @@ def main():
             vol_regime_weight=config["vol_weight"],
             fast_mode=True,
         )
-        
+
         if df.empty:
             logger.error(f"Experiment failed for {config['name']}")
             continue
-        
+
         overall = df[df["segment"] == "OVERALL"].iloc[0]
         difficult = _difficult_period_metrics(df)
-        
+
         result = {
             "config_name": config["name"],
             "use_vol_regime": config["use_vol"],
@@ -148,15 +149,15 @@ def main():
             "difficult_maxdd": difficult.get("difficult_maxdd", np.nan),
         }
         fast_results.append(result)
-    
+
     fast_elapsed = (time.perf_counter() - fast_start) / 60
-    
+
     if not fast_results:
         logger.error("All fast mode experiments failed.")
         sys.exit(1)
-    
+
     fast_df = pd.DataFrame(fast_results)
-    
+
     logger.info("")
     logger.info("=" * 80)
     logger.info("FAST MODE RESULTS")
@@ -165,31 +166,41 @@ def main():
     logger.info("")
     logger.info("| Configuration | CAGR | Sharpe | MaxDD | Turnover |")
     logger.info("|---------------|------|--------|-------|----------|")
-    
+
     for _, row in fast_df.iterrows():
         logger.info(
             f"| {row['config_name']:>35} | {row['cagr']:>4.2%} | {row['sharpe']:>6.3f} | "
             f"{row['maxdd']:>5.2%} | {row['turnover']:>8.1%} |"
         )
-    
+
     logger.info("")
-    
+
     # Check if vol regime is promising
-    baseline_fast = fast_df[fast_df["use_vol_regime"] == False].iloc[0]
-    best_vol_fast = fast_df[fast_df["use_vol_regime"] == True].loc[fast_df[fast_df["use_vol_regime"] == True]["sharpe"].idxmax()]
-    
+    baseline_fast = fast_df[not fast_df["use_vol_regime"]].iloc[0]
+    best_vol_fast = fast_df[fast_df["use_vol_regime"]].loc[
+        fast_df[fast_df["use_vol_regime"]]["sharpe"].idxmax()
+    ]
+
     sharpe_improvement = best_vol_fast["sharpe"] - baseline_fast["sharpe"]
     cagr_improvement = best_vol_fast["cagr"] - baseline_fast["cagr"]
-    
+
     logger.info("FAST MODE COMPARISON:")
-    logger.info(f"  Baseline: {baseline_fast['sharpe']:.3f} Sharpe, {baseline_fast['cagr']:.2%} CAGR")
-    logger.info(f"  Best Vol Regime: {best_vol_fast['config_name']} - {best_vol_fast['sharpe']:.3f} Sharpe, {best_vol_fast['cagr']:.2%} CAGR")
-    logger.info(f"  Improvement: {sharpe_improvement:+.3f} Sharpe, {cagr_improvement:+.2%} CAGR")
+    logger.info(
+        f"  Baseline: {baseline_fast['sharpe']:.3f} Sharpe, {baseline_fast['cagr']:.2%} CAGR"
+    )
+    logger.info(
+        f"  Best Vol Regime: {best_vol_fast['config_name']} - {best_vol_fast['sharpe']:.3f} Sharpe, {best_vol_fast['cagr']:.2%} CAGR"
+    )
+    logger.info(
+        f"  Improvement: {sharpe_improvement:+.3f} Sharpe, {cagr_improvement:+.2%} CAGR"
+    )
     logger.info("")
-    
+
     # Decision: run full validation if promising
-    run_full_validation = sharpe_improvement > 0.02 or (sharpe_improvement > 0.01 and cagr_improvement > 0.01)
-    
+    run_full_validation = sharpe_improvement > 0.02 or (
+        sharpe_improvement > 0.01 and cagr_improvement > 0.01
+    )
+
     if not run_full_validation:
         logger.info("=" * 80)
         logger.info("DECISION: SKIP FULL VALIDATION")
@@ -197,11 +208,11 @@ def main():
         logger.info("Fast mode shows no meaningful improvement.")
         logger.info("Volatility regime does not appear to improve risk_on signal.")
         logger.info("")
-        
+
         # Generate fast-mode-only report
         _generate_report(fast_df, None, fast_elapsed, 0, run_full_validation=False)
         return
-    
+
     # === PHASE 2: Full validation ===
     logger.info("=" * 80)
     logger.info("PHASE 2: FULL VALIDATION")
@@ -209,9 +220,9 @@ def main():
     logger.info("Volatility regime shows promise in fast mode.")
     logger.info("Running full backtest (all segments, full history)...")
     logger.info("")
-    
+
     full_start = time.perf_counter()
-    
+
     # Run full validation on baseline and best vol regime config
     full_configs = [
         {"name": "Baseline (momentum only)", "use_vol": False, "vol_weight": 0.0},
@@ -221,9 +232,9 @@ def main():
             "vol_weight": best_vol_fast["vol_weight"],
         },
     ]
-    
+
     full_results = []
-    
+
     for config in full_configs:
         df = _run_experiment(
             config_name=config["name"],
@@ -231,14 +242,14 @@ def main():
             vol_regime_weight=config["vol_weight"],
             fast_mode=False,
         )
-        
+
         if df.empty:
             logger.error(f"Full validation failed for {config['name']}")
             continue
-        
+
         overall = df[df["segment"] == "OVERALL"].iloc[0]
         difficult = _difficult_period_metrics(df)
-        
+
         result = {
             "config_name": config["name"],
             "use_vol_regime": config["use_vol"],
@@ -253,15 +264,15 @@ def main():
             "difficult_maxdd": difficult.get("difficult_maxdd", np.nan),
         }
         full_results.append(result)
-    
+
     full_elapsed = (time.perf_counter() - full_start) / 60
-    
+
     if not full_results:
         logger.error("All full validation experiments failed.")
         sys.exit(1)
-    
+
     full_df = pd.DataFrame(full_results)
-    
+
     logger.info("")
     logger.info("=" * 80)
     logger.info("FULL VALIDATION RESULTS")
@@ -270,17 +281,19 @@ def main():
     logger.info("")
     logger.info("| Configuration | CAGR | Sharpe | MaxDD | Turnover |")
     logger.info("|---------------|------|--------|-------|----------|")
-    
+
     for _, row in full_df.iterrows():
         logger.info(
             f"| {row['config_name']:>35} | {row['cagr']:>4.2%} | {row['sharpe']:>6.3f} | "
             f"{row['maxdd']:>5.2%} | {row['turnover']:>8.1%} |"
         )
-    
+
     logger.info("")
-    
+
     # Generate report
-    _generate_report(fast_df, full_df, fast_elapsed, full_elapsed, run_full_validation=True)
+    _generate_report(
+        fast_df, full_df, fast_elapsed, full_elapsed, run_full_validation=True
+    )
 
 
 def _generate_report(
@@ -328,84 +341,94 @@ def _generate_report(
         "| Configuration | Vol Weight | CAGR | Sharpe | MaxDD | Turnover |",
         "|---------------|------------|------|--------|-------|----------|",
     ]
-    
+
     for _, row in fast_df.iterrows():
         report_lines.append(
             f"| {row['config_name']:>35} | {row['vol_weight']:>10.2f} | {row['cagr']:>4.2%} | "
             f"{row['sharpe']:>6.3f} | {row['maxdd']:>5.2%} | {row['turnover']:>8.1%} |"
         )
-    
+
     report_lines.append("")
-    
-    baseline_fast = fast_df[fast_df["use_vol_regime"] == False].iloc[0]
-    best_vol_fast = fast_df[fast_df["use_vol_regime"] == True].loc[
-        fast_df[fast_df["use_vol_regime"] == True]["sharpe"].idxmax()
+
+    baseline_fast = fast_df[not fast_df["use_vol_regime"]].iloc[0]
+    best_vol_fast = fast_df[fast_df["use_vol_regime"]].loc[
+        fast_df[fast_df["use_vol_regime"]]["sharpe"].idxmax()
     ]
-    
-    report_lines.extend([
-        "### Fast Mode Comparison",
-        "",
-        f"**Baseline (momentum only):** {baseline_fast['sharpe']:.3f} Sharpe, {baseline_fast['cagr']:.2%} CAGR",
-        f"**Best Vol Regime:** {best_vol_fast['config_name']} - {best_vol_fast['sharpe']:.3f} Sharpe, {best_vol_fast['cagr']:.2%} CAGR",
-        "",
-        f"**Improvement:** {best_vol_fast['sharpe'] - baseline_fast['sharpe']:+.3f} Sharpe, "
-        f"{best_vol_fast['cagr'] - baseline_fast['cagr']:+.2%} CAGR",
-        "",
-    ])
-    
+
+    report_lines.extend(
+        [
+            "### Fast Mode Comparison",
+            "",
+            f"**Baseline (momentum only):** {baseline_fast['sharpe']:.3f} Sharpe, {baseline_fast['cagr']:.2%} CAGR",
+            f"**Best Vol Regime:** {best_vol_fast['config_name']} - {best_vol_fast['sharpe']:.3f} Sharpe, {best_vol_fast['cagr']:.2%} CAGR",
+            "",
+            f"**Improvement:** {best_vol_fast['sharpe'] - baseline_fast['sharpe']:+.3f} Sharpe, "
+            f"{best_vol_fast['cagr'] - baseline_fast['cagr']:+.2%} CAGR",
+            "",
+        ]
+    )
+
     # Full validation results
     if run_full_validation and full_df is not None:
-        baseline_full = full_df[full_df["use_vol_regime"] == False].iloc[0]
-        vol_regime_full = full_df[full_df["use_vol_regime"] == True].iloc[0]
-        
-        report_lines.extend([
-            "## Phase 2: Full Validation",
-            "",
-            f"**Runtime:** {full_elapsed:.1f} minutes",
-            "",
-            "| Configuration | CAGR | Sharpe | MaxDD | Vol | Turnover |",
-            "|---------------|------|--------|-------|-----|----------|",
-        ])
-        
+        baseline_full = full_df[not full_df["use_vol_regime"]].iloc[0]
+        vol_regime_full = full_df[full_df["use_vol_regime"]].iloc[0]
+
+        report_lines.extend(
+            [
+                "## Phase 2: Full Validation",
+                "",
+                f"**Runtime:** {full_elapsed:.1f} minutes",
+                "",
+                "| Configuration | CAGR | Sharpe | MaxDD | Vol | Turnover |",
+                "|---------------|------|--------|-------|-----|----------|",
+            ]
+        )
+
         for _, row in full_df.iterrows():
             report_lines.append(
                 f"| {row['config_name']:>35} | {row['cagr']:>4.2%} | {row['sharpe']:>6.3f} | "
                 f"{row['maxdd']:>5.2%} | {row['vol']:>3.2%} | {row['turnover']:>8.1%} |"
             )
-        
-        report_lines.extend([
-            "",
-            "### Full Validation Comparison",
-            "",
-            f"**Baseline:** {baseline_full['sharpe']:.3f} Sharpe, {baseline_full['cagr']:.2%} CAGR",
-            f"**Vol Regime:** {vol_regime_full['sharpe']:.3f} Sharpe, {vol_regime_full['cagr']:.2%} CAGR",
-            "",
-            f"**Improvement:** {vol_regime_full['sharpe'] - baseline_full['sharpe']:+.3f} Sharpe, "
-            f"{vol_regime_full['cagr'] - baseline_full['cagr']:+.2%} CAGR",
-            "",
-            "### Difficult Period Performance (2021-2022)",
-            "",
-            "| Configuration | CAGR | Sharpe | MaxDD |",
-            "|---------------|------|--------|-------|",
-        ])
-        
+
+        report_lines.extend(
+            [
+                "",
+                "### Full Validation Comparison",
+                "",
+                f"**Baseline:** {baseline_full['sharpe']:.3f} Sharpe, {baseline_full['cagr']:.2%} CAGR",
+                f"**Vol Regime:** {vol_regime_full['sharpe']:.3f} Sharpe, {vol_regime_full['cagr']:.2%} CAGR",
+                "",
+                f"**Improvement:** {vol_regime_full['sharpe'] - baseline_full['sharpe']:+.3f} Sharpe, "
+                f"{vol_regime_full['cagr'] - baseline_full['cagr']:+.2%} CAGR",
+                "",
+                "### Difficult Period Performance (2021-2022)",
+                "",
+                "| Configuration | CAGR | Sharpe | MaxDD |",
+                "|---------------|------|--------|-------|",
+            ]
+        )
+
         for _, row in full_df.iterrows():
             if not pd.isna(row["difficult_cagr"]):
                 report_lines.append(
                     f"| {row['config_name']:>35} | {row['difficult_cagr']:>4.2%} | "
                     f"{row['difficult_sharpe']:>6.3f} | {row['difficult_maxdd']:>5.2%} |"
                 )
-        
-        report_lines.extend([
-            "",
-            "### Analysis",
-            "",
-        ])
-        
-        sharpe_imp_full = vol_regime_full['sharpe'] - baseline_full['sharpe']
-        turnover_diff_full = vol_regime_full['turnover'] - baseline_full['turnover']
-        difficult_sharpe_imp = vol_regime_full['difficult_sharpe'] - baseline_full['difficult_sharpe']
-        
+
+        report_lines.extend(
+            [
+                "",
+                "### Analysis",
+                "",
+            ]
+        )
+
+        sharpe_imp_full = vol_regime_full["sharpe"] - baseline_full["sharpe"]
+        turnover_diff_full = vol_regime_full["turnover"] - baseline_full["turnover"]
+        difficult_sharpe_imp = (
+            vol_regime_full["difficult_sharpe"] - baseline_full["difficult_sharpe"]
+        )
+
         # Recommendation based on full validation
         if sharpe_imp_full > 0.03:
             verdict = "**ADOPT VOLATILITY REGIME**"
@@ -427,119 +450,153 @@ def _generate_report(
                 f"- Implementation cost is low"
             )
         else:
-            verdict = "**KEEP BASELINE: Volatility regime does not improve performance**"
+            verdict = (
+                "**KEEP BASELINE: Volatility regime does not improve performance**"
+            )
             explanation = (
                 f"Volatility regime underperforms momentum-only baseline by {sharpe_imp_full:+.3f} Sharpe.\n"
                 "The momentum signal alone is sufficient.\n"
                 "Volatility regime adds complexity without improving risk-adjusted returns."
             )
-        
+
         report_lines.append(verdict)
         report_lines.append("")
         report_lines.append(explanation)
         report_lines.append("")
-    
+
     else:
         # Fast mode only (no full validation)
-        report_lines.extend([
-            "## Fast Mode Decision",
-            "",
-        ])
-        
-        sharpe_imp_fast = best_vol_fast['sharpe'] - baseline_fast['sharpe']
-        
+        report_lines.extend(
+            [
+                "## Fast Mode Decision",
+                "",
+            ]
+        )
+
+        sharpe_imp_fast = best_vol_fast["sharpe"] - baseline_fast["sharpe"]
+
         verdict = "**SKIP FULL VALIDATION: No improvement in fast mode**"
         explanation = (
             f"Fast mode screening shows {sharpe_imp_fast:+.3f} Sharpe improvement.\n"
             "This is below the threshold (+0.02) for running full validation.\n"
             "Volatility regime does not appear to improve the risk_on signal."
         )
-        
+
         report_lines.append(verdict)
         report_lines.append("")
         report_lines.append(explanation)
         report_lines.append("")
-        
+
         # Analysis of why it didn't work
-        report_lines.extend([
-            "### Why Volatility Regime Doesn't Help",
-            "",
-            "Possible reasons:",
-            "1. **Momentum already captures volatility information**",
-            "   - High vol periods often coincide with negative momentum",
-            "   - The two signals are correlated, not orthogonal",
-            "",
-            "2. **Volatility percentile is noisy**",
-            "   - Short-term vol spikes may not persist",
-            "   - 3-year percentile may be too backward-looking",
-            "",
-            "3. **Risk_on blending already smooths exposure**",
-            "   - Equal-weight construction with dynamic blending provides natural de-risking",
-            "   - Adding vol regime may be redundant",
-            "",
-        ])
-    
+        report_lines.extend(
+            [
+                "### Why Volatility Regime Doesn't Help",
+                "",
+                "Possible reasons:",
+                "1. **Momentum already captures volatility information**",
+                "   - High vol periods often coincide with negative momentum",
+                "   - The two signals are correlated, not orthogonal",
+                "",
+                "2. **Volatility percentile is noisy**",
+                "   - Short-term vol spikes may not persist",
+                "   - 3-year percentile may be too backward-looking",
+                "",
+                "3. **Risk_on blending already smooths exposure**",
+                "   - Equal-weight construction with dynamic blending provides natural de-risking",
+                "   - Adding vol regime may be redundant",
+                "",
+            ]
+        )
+
     # Next experiment recommendations
-    report_lines.extend([
-        "## Next Experiment Recommendations",
-        "",
-    ])
-    
+    report_lines.extend(
+        [
+            "## Next Experiment Recommendations",
+            "",
+        ]
+    )
+
     if run_full_validation and full_df is not None:
-        vol_regime_full = full_df[full_df["use_vol_regime"] == True].iloc[0]
-        baseline_full = full_df[full_df["use_vol_regime"] == False].iloc[0]
-        
+        vol_regime_full = full_df[full_df["use_vol_regime"]].iloc[0]
+        baseline_full = full_df[not full_df["use_vol_regime"]].iloc[0]
+
         if vol_regime_full["sharpe"] > baseline_full["sharpe"] + 0.03:
-            report_lines.append("1. **Test alternative vol regime construction** - VIX, implied vol, vol-of-vol")
-            report_lines.append("2. **Test vol regime windows** - different lookbacks for realized vol")
-            report_lines.append("3. **Test regime-specific vol thresholds** - vary by macro environment")
+            report_lines.append(
+                "1. **Test alternative vol regime construction** - VIX, implied vol, vol-of-vol"
+            )
+            report_lines.append(
+                "2. **Test vol regime windows** - different lookbacks for realized vol"
+            )
+            report_lines.append(
+                "3. **Test regime-specific vol thresholds** - vary by macro environment"
+            )
         else:
-            report_lines.append("1. **Test rebalance frequency** - quarterly vs monthly (reduce turnover)")
-            report_lines.append("2. **Test alternative orthogonal signals** - credit spreads, yield curve, breadth")
-            report_lines.append("3. **Test regime-conditional universes** - vary assets by macro regime")
+            report_lines.append(
+                "1. **Test rebalance frequency** - quarterly vs monthly (reduce turnover)"
+            )
+            report_lines.append(
+                "2. **Test alternative orthogonal signals** - credit spreads, yield curve, breadth"
+            )
+            report_lines.append(
+                "3. **Test regime-conditional universes** - vary assets by macro regime"
+            )
     else:
-        report_lines.append("1. **Test rebalance frequency** - quarterly vs monthly (reduce turnover)")
-        report_lines.append("2. **Test alternative orthogonal signals** - credit spreads, yield curve, market breadth")
-        report_lines.append("3. **Test regime-conditional universes** - vary assets by macro regime")
-    
-    report_lines.append("4. **Test cross-sectional momentum** - rank assets by relative strength")
-    report_lines.append("5. **Test alternative signal horizons** - blend multiple momentum lookbacks")
-    
-    report_lines.extend([
-        "",
-        "## Summary",
-        "",
-        "### Fast Mode Performance",
-        "",
-        "| Configuration | Vol Weight | CAGR | Sharpe | MaxDD | Vol | Turnover | Difficult Sharpe |",
-        "|---------------|------------|------|--------|-------|-----|----------|------------------|",
-    ])
-    
+        report_lines.append(
+            "1. **Test rebalance frequency** - quarterly vs monthly (reduce turnover)"
+        )
+        report_lines.append(
+            "2. **Test alternative orthogonal signals** - credit spreads, yield curve, market breadth"
+        )
+        report_lines.append(
+            "3. **Test regime-conditional universes** - vary assets by macro regime"
+        )
+
+    report_lines.append(
+        "4. **Test cross-sectional momentum** - rank assets by relative strength"
+    )
+    report_lines.append(
+        "5. **Test alternative signal horizons** - blend multiple momentum lookbacks"
+    )
+
+    report_lines.extend(
+        [
+            "",
+            "## Summary",
+            "",
+            "### Fast Mode Performance",
+            "",
+            "| Configuration | Vol Weight | CAGR | Sharpe | MaxDD | Vol | Turnover | Difficult Sharpe |",
+            "|---------------|------------|------|--------|-------|-----|----------|------------------|",
+        ]
+    )
+
     for _, row in fast_df.iterrows():
         report_lines.append(
             f"| {row['config_name']:>35} | {row['vol_weight']:>10.2f} | {row['cagr']:>4.2%} | "
             f"{row['sharpe']:>6.3f} | {row['maxdd']:>5.2%} | {row['vol']:>3.2%} | "
             f"{row['turnover']:>8.1%} | {row['difficult_sharpe']:>16.3f} |"
         )
-    
+
     if run_full_validation and full_df is not None:
-        report_lines.extend([
-            "",
-            "### Full Validation Performance",
-            "",
-            "| Configuration | Vol Weight | CAGR | Sharpe | MaxDD | Vol | Turnover | Difficult Sharpe |",
-            "|---------------|------------|------|--------|-------|-----|----------|------------------|",
-        ])
-        
+        report_lines.extend(
+            [
+                "",
+                "### Full Validation Performance",
+                "",
+                "| Configuration | Vol Weight | CAGR | Sharpe | MaxDD | Vol | Turnover | Difficult Sharpe |",
+                "|---------------|------------|------|--------|-------|-----|----------|------------------|",
+            ]
+        )
+
         for _, row in full_df.iterrows():
             report_lines.append(
                 f"| {row['config_name']:>35} | {row['vol_weight']:>10.2f} | {row['cagr']:>4.2%} | "
                 f"{row['sharpe']:>6.3f} | {row['maxdd']:>5.2%} | {row['vol']:>3.2%} | "
                 f"{row['turnover']:>8.1%} | {row['difficult_sharpe']:>16.3f} |"
             )
-    
+
     report = "\n".join(report_lines)
-    
+
     output_path = OUTPUTS_DIR / "VOLATILITY_REGIME_EXPERIMENT.md"
     output_path.write_text(report, encoding="utf-8")
     logger.info(f"Report saved to {output_path}")

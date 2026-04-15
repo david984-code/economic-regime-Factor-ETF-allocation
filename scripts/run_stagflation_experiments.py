@@ -7,16 +7,19 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.evaluation.walk_forward import run_walk_forward_evaluation
-from src.evaluation.model_results_db import list_runs, get_run_segments
-from src.config import OUTPUTS_DIR
-import pandas as pd
 import numpy as np
+import pandas as pd
+
+from src.config import OUTPUTS_DIR
+from src.evaluation.model_results_db import get_run_segments, list_runs
+from src.evaluation.walk_forward import run_walk_forward_evaluation
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 
-def _run_experiment(name: str, use_override: bool, use_cap: bool, cap_value: float = 0.2) -> str | None:
+def _run_experiment(
+    name: str, use_override: bool, use_cap: bool, cap_value: float = 0.2
+) -> str | None:
     """Run one experiment, return run_id."""
     from src.config import START_DATE, get_end_date
 
@@ -96,7 +99,8 @@ def _run_2021_2022_metrics(run_id: str) -> dict:
     if seg_df.empty:
         return {}
     sub = seg_df[
-        seg_df["test_start"].str.startswith("2021") | seg_df["test_start"].str.startswith("2022")
+        seg_df["test_start"].str.startswith("2021")
+        | seg_df["test_start"].str.startswith("2022")
     ]
     if sub.empty:
         return {"cagr_2021_2022": np.nan, "sharpe_2021_2022": np.nan, "n_2021_2022": 0}
@@ -109,11 +113,18 @@ def _run_2021_2022_metrics(run_id: str) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--baseline-only", action="store_true", help="Run only baseline")
-    parser.add_argument("--override-only", action="store_true", help="Run only override")
+    parser.add_argument(
+        "--baseline-only", action="store_true", help="Run only baseline"
+    )
+    parser.add_argument(
+        "--override-only", action="store_true", help="Run only override"
+    )
     parser.add_argument("--cap-only", action="store_true", help="Run only risk_on_cap")
-    parser.add_argument("--compare-only", action="store_true",
-                       help="Skip runs, compare last 3 by experiment_type")
+    parser.add_argument(
+        "--compare-only",
+        action="store_true",
+        help="Skip runs, compare last 3 by experiment_type",
+    )
     args = parser.parse_args()
 
     run_ids = {}
@@ -155,7 +166,9 @@ def main() -> None:
                 if match:
                     by_type[k] = match
 
-        regime_df = pd.read_csv(OUTPUTS_DIR / "regime_labels_expanded.csv", parse_dates=["date"])
+        regime_df = pd.read_csv(
+            OUTPUTS_DIR / "regime_labels_expanded.csv", parse_dates=["date"]
+        )
         regime_df = regime_df.dropna(subset=["regime"]).set_index("date")
         regime_df.index = pd.to_datetime(regime_df.index)
 
@@ -182,13 +195,15 @@ def main() -> None:
                 f"{run.get('strategy_turnover', 0):.2f} |"
             )
 
-        report_lines.extend([
-            "",
-            "## 2. Stagflation-Only Segment Performance",
-            "",
-            "| Experiment | Stagflation CAGR | Stagflation Sharpe | N segments |",
-            "|------------|------------------|--------------------|-----------|",
-        ])
+        report_lines.extend(
+            [
+                "",
+                "## 2. Stagflation-Only Segment Performance",
+                "",
+                "| Experiment | Stagflation CAGR | Stagflation Sharpe | N segments |",
+                "|------------|------------------|--------------------|-----------|",
+            ]
+        )
         for label in exp_order:
             run = by_type.get(label)
             if run is None:
@@ -200,13 +215,15 @@ def main() -> None:
                 f"{sm.get('stagflation_sharpe', np.nan):.3f} | {sm.get('stagflation_n', 0)} |"
             )
 
-        report_lines.extend([
-            "",
-            "## 3. Beat Rates vs Benchmarks",
-            "",
-            "| Experiment | vs SPY | vs 60/40 | vs Equal_Weight | vs Risk_On_Off |",
-            "|------------|--------|----------|----------------|----------------|",
-        ])
+        report_lines.extend(
+            [
+                "",
+                "## 3. Beat Rates vs Benchmarks",
+                "",
+                "| Experiment | vs SPY | vs 60/40 | vs Equal_Weight | vs Risk_On_Off |",
+                "|------------|--------|----------|----------------|----------------|",
+            ]
+        )
         for label in exp_order:
             run = by_type.get(label)
             if run is None:
@@ -218,13 +235,15 @@ def main() -> None:
                 f"{br.get('equal_weight', 0):.1%} | {br.get('risk_on_off', 0):.1%} |"
             )
 
-        report_lines.extend([
-            "",
-            "## 4. 2021-2022 Style Periods",
-            "",
-            "| Experiment | CAGR | Sharpe | N segments |",
-            "|------------|------|--------|-----------|",
-        ])
+        report_lines.extend(
+            [
+                "",
+                "## 4. 2021-2022 Style Periods",
+                "",
+                "| Experiment | CAGR | Sharpe | N segments |",
+                "|------------|------|--------|-----------|",
+            ]
+        )
         for label in exp_order:
             run = by_type.get(label)
             if run is None:
@@ -241,7 +260,10 @@ def main() -> None:
         if cap_run and baseline_run:
             cap_cagr = cap_run.get("strategy_cagr") or 0
             base_cagr = baseline_run.get("strategy_cagr") or 0
-            cap_stag = stag_metrics.get("stagflation_risk_on_cap", {}).get("stagflation_cagr") or 0
+            cap_stag = (
+                stag_metrics.get("stagflation_risk_on_cap", {}).get("stagflation_cagr")
+                or 0
+            )
             base_stag = stag_metrics.get("baseline", {}).get("stagflation_cagr") or 0
             if cap_cagr > base_cagr and cap_stag > base_stag:
                 rec = "**KEEP** - Cap improves overall and Stagflation performance vs baseline."
@@ -251,16 +273,18 @@ def main() -> None:
                 rec = "**FURTHER TUNE** - Mixed results; consider testing different cap values (e.g. 0.15, 0.25)."
         else:
             rec = "Insufficient runs for recommendation."
-        report_lines.extend([
-            "",
-            "## 5. Recommendation",
-            "",
-            rec,
-            "",
-            "---",
-            "",
-            "*Run `python scripts/run_stagflation_experiments.py` to refresh.*",
-        ])
+        report_lines.extend(
+            [
+                "",
+                "## 5. Recommendation",
+                "",
+                rec,
+                "",
+                "---",
+                "",
+                "*Run `python scripts/run_stagflation_experiments.py` to refresh.*",
+            ]
+        )
 
         out_path = OUTPUTS_DIR / "STAGFLATION_EXPERIMENT_RISK_ON_CAP.md"
         out_path.write_text("\n".join(report_lines), encoding="utf-8")

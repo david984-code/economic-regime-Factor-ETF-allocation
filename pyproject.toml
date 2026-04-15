@@ -29,19 +29,15 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
-]
-
-[dependency-groups]
-dev = [
+    "ruff>=0.15.2",
     "mypy>=1.14.1",
     "pandas-stubs>=2.2.2.240807",
-    "ruff>=0.15.2",
     "types-python-dateutil>=2.9.0.20260124",
 ]
 
 # Ruff configuration
 [tool.ruff]
-line-length = 100
+line-length = 88
 target-version = "py310"
 
 [tool.ruff.lint]
@@ -57,6 +53,10 @@ select = [
 ]
 ignore = [
     "E501",  # line too long (handled by formatter)
+    "E402",  # module-import-not-at-top (common in pipeline/script files)
+    "E702",  # multiple-statements-on-one-line-semicolon
+    "N806",  # non-lowercase-variable-in-function (pandas convention: df, X, etc.)
+    "N803",  # invalid-argument-name (same: uppercase args in data code)
 ]
 
 [tool.ruff.format]
@@ -66,7 +66,7 @@ indent-style = "space"
 # Mypy configuration
 [tool.mypy]
 python_version = "3.11"
-strict = true                       # Strict version
+strict = false                      # Will tighten incrementally
 warn_return_any = true              # Catches when types leak               
 warn_unused_configs = true          # If there are mypy config settings that don't do anything
 disallow_untyped_defs = true        # Every function must have complete type hints

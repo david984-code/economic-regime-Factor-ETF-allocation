@@ -233,9 +233,7 @@ def run_sweep(
         logger.info("[%d/%d] Running: %s", i + 1, len(combos), combo)
         t0 = time.perf_counter()
         try:
-            metrics, run_id, n_segments = run_single_combo(
-                combo, fast_mode=fast_mode
-            )
+            metrics, run_id, n_segments = run_single_combo(combo, fast_mode=fast_mode)
         except Exception as e:
             logger.error("[%d/%d] Failed: %s", i + 1, len(combos), e)
             metrics = {col: float("nan") for col in METRICS_COLS}
@@ -434,8 +432,13 @@ def _generate_heatmaps(
                 if np.isfinite(val):
                     color = "white" if abs(val) > 0.05 else "black"
                     ax.text(
-                        j, i, f"{val:+.3f}",
-                        ha="center", va="center", color=color, fontsize=9,
+                        j,
+                        i,
+                        f"{val:+.3f}",
+                        ha="center",
+                        va="center",
+                        color=color,
+                        fontsize=9,
                     )
 
         fig.colorbar(im, label="Sharpe Delta vs Baseline")
@@ -447,11 +450,15 @@ def _generate_heatmaps(
 
     # Single-parameter sensitivity plots
     for param in swept_params:
-        param_df = df.groupby(param).agg(
-            Sharpe_Mean=("Sharpe", "mean"),
-            Sharpe_Std=("Sharpe", "std"),
-            Sharpe_Delta_Mean=("Sharpe_Delta", "mean"),
-        ).reset_index()
+        param_df = (
+            df.groupby(param)
+            .agg(
+                Sharpe_Mean=("Sharpe", "mean"),
+                Sharpe_Std=("Sharpe", "std"),
+                Sharpe_Delta_Mean=("Sharpe_Delta", "mean"),
+            )
+            .reset_index()
+        )
 
         fig, ax = plt.subplots(figsize=(8, 5))
         x = range(len(param_df))

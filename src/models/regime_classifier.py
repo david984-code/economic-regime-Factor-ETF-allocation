@@ -137,7 +137,11 @@ class RegimeClassifier:
         # --- FRED retrieval ---
         t0 = time.perf_counter()
         if use_local_cache:
-            from src.data.fred_ingestion import fetch_fred_core_cached, fetch_fred_optional_cached
+            from src.data.fred_ingestion import (
+                fetch_fred_core_cached,
+                fetch_fred_optional_cached,
+            )
+
             gdp, cpi, yield_10y, yield_3m, m2, velocity = fetch_fred_core_cached(
                 self.api_key, end_date=end_date
             )
@@ -287,5 +291,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     import logging
+
     logging.basicConfig(level=logging.INFO)
     main()

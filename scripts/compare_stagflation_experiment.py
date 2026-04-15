@@ -10,7 +10,6 @@ import pandas as pd
 from src.config import OUTPUTS_DIR
 from src.evaluation.model_results_db import (
     compare_runs,
-    get_latest_run,
     list_runs,
 )
 
@@ -37,14 +36,20 @@ def main() -> None:
     print("\n" + "-" * 70)
     print("OVERALL METRICS (model_runs)")
     print("-" * 70)
-    metrics = ["strategy_cagr", "strategy_sharpe", "strategy_maxdd", "strategy_vol", "strategy_turnover"]
+    metrics = [
+        "strategy_cagr",
+        "strategy_sharpe",
+        "strategy_maxdd",
+        "strategy_vol",
+        "strategy_turnover",
+    ]
     print(f"{'Metric':<25} {'New':>12} {'Baseline':>12} {'Change':>12}")
     for m in metrics:
         v_new = r_new.get(m)
         v_base = r_base.get(m)
         if v_new is not None and v_base is not None:
             chg = v_new - v_base
-            pct = f"{(chg/v_base)*100:+.1f}%" if v_base != 0 else "N/A"
+            f"{(chg / v_base) * 100:+.1f}%" if v_base != 0 else "N/A"
             print(f"{m:<25} {v_new:>12.4f} {v_base:>12.4f} {chg:>+12.4f}")
         else:
             print(f"{m:<25} {str(v_new):>12} {str(v_base):>12}")
@@ -67,7 +72,9 @@ def main() -> None:
     df_base = df_base[df_base["segment"] != "OVERALL"]
 
     # Tag Stagflation segments
-    regimes = pd.read_csv(OUTPUTS_DIR / "regime_labels_expanded.csv", parse_dates=["date"])
+    regimes = pd.read_csv(
+        OUTPUTS_DIR / "regime_labels_expanded.csv", parse_dates=["date"]
+    )
     regimes["month"] = pd.to_datetime(regimes["date"]).dt.to_period("M")
 
     def tag_regime(df):
@@ -76,7 +83,11 @@ def main() -> None:
             ts = pd.Period(row["test_start"], freq="M")
             te = pd.Period(row["test_end"], freq="M")
             sub = regimes[(regimes["month"] >= ts) & (regimes["month"] <= te)]
-            dom = sub["regime"].mode().iloc[0] if len(sub) > 0 and len(sub["regime"].mode()) > 0 else "Unknown"
+            dom = (
+                sub["regime"].mode().iloc[0]
+                if len(sub) > 0 and len(sub["regime"].mode()) > 0
+                else "Unknown"
+            )
             seg_regimes.append(dom)
         return seg_regimes
 
@@ -88,10 +99,16 @@ def main() -> None:
 
     if len(stag_new) > 0 and len(stag_base) > 0:
         print(f"Stagflation segments: New={len(stag_new)}, Baseline={len(stag_base)}")
-        print(f"\nNew (override):     Strategy CAGR={stag_new['Strategy_CAGR'].mean():.2%}, Sharpe={stag_new['Strategy_Sharpe'].mean():.3f}")
-        print(f"Baseline:           Strategy CAGR={stag_base['Strategy_CAGR'].mean():.2%}, Sharpe={stag_base['Strategy_Sharpe'].mean():.3f}")
+        print(
+            f"\nNew (override):     Strategy CAGR={stag_new['Strategy_CAGR'].mean():.2%}, Sharpe={stag_new['Strategy_Sharpe'].mean():.3f}"
+        )
+        print(
+            f"Baseline:           Strategy CAGR={stag_base['Strategy_CAGR'].mean():.2%}, Sharpe={stag_base['Strategy_Sharpe'].mean():.3f}"
+        )
         cagr_chg = stag_new["Strategy_CAGR"].mean() - stag_base["Strategy_CAGR"].mean()
-        sharpe_chg = stag_new["Strategy_Sharpe"].mean() - stag_base["Strategy_Sharpe"].mean()
+        sharpe_chg = (
+            stag_new["Strategy_Sharpe"].mean() - stag_base["Strategy_Sharpe"].mean()
+        )
         print(f"Change in Stagflation: CAGR {cagr_chg:+.2%}, Sharpe {sharpe_chg:+.3f}")
     else:
         print("No Stagflation segments in one or both runs.")

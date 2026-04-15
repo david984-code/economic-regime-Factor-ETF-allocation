@@ -50,8 +50,8 @@ def run_parity_check() -> int:
         if "cash" not in alloc:
             alloc["cash"] = 0.0
 
-    returns, regime_df, w_risk_on, w_risk_off, equal_weight_returns = _compute_returns_and_setup(
-        prices, regime_df, allocations
+    returns, regime_df, w_risk_on, w_risk_off, equal_weight_returns = (
+        _compute_returns_and_setup(prices, regime_df, allocations)
     )
 
     print("Running loop implementation...")
@@ -68,7 +68,9 @@ def run_parity_check() -> int:
     )
     t_vec = time.perf_counter() - t0
 
-    print(f"\nTiming: loop={t_loop*1000:.1f}ms, vectorized={t_vec*1000:.1f}ms, speedup={t_loop/t_vec:.1f}x")
+    print(
+        f"\nTiming: loop={t_loop * 1000:.1f}ms, vectorized={t_vec * 1000:.1f}ms, speedup={t_loop / t_vec:.1f}x"
+    )
 
     ok = True
 
@@ -83,11 +85,21 @@ def run_parity_check() -> int:
         max_diff = np.nanmax(diff)
         if max_diff > ATOL:
             print(f"FAIL: Portfolio returns max diff = {max_diff:.2e}")
-            mismatches = np.where(~np.isclose(ret_loop.values, ret_vec.values, rtol=RTOL, atol=ATOL, equal_nan=True))[0]
+            mismatches = np.where(
+                ~np.isclose(
+                    ret_loop.values,
+                    ret_vec.values,
+                    rtol=RTOL,
+                    atol=ATOL,
+                    equal_nan=True,
+                )
+            )[0]
             for i in mismatches[:5]:
-                print(f"  {ret_loop.index[i]}: loop={ret_loop.iloc[i]:.6e} vec={ret_vec.iloc[i]:.6e}")
+                print(
+                    f"  {ret_loop.index[i]}: loop={ret_loop.iloc[i]:.6e} vec={ret_vec.iloc[i]:.6e}"
+                )
             if len(mismatches) > 5:
-                print(f"  ... and {len(mismatches)-5} more")
+                print(f"  ... and {len(mismatches) - 5} more")
             ok = False
         else:
             print("OK: Portfolio returns match")
@@ -111,8 +123,8 @@ def run_parity_check() -> int:
         print("OK: Drawdown match")
 
     # Metrics
-    from src.backtest.metrics import compute_metrics
     from src.backtest.engine import CASH_DAILY_YIELD
+    from src.backtest.metrics import compute_metrics
 
     m_loop = compute_metrics(ret_loop, rf_daily=CASH_DAILY_YIELD)
     m_vec = compute_metrics(ret_vec, rf_daily=CASH_DAILY_YIELD)

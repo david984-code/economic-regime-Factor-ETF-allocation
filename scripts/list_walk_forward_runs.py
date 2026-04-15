@@ -18,8 +18,12 @@ if __name__ == "__main__":
     print(f"  n_segments: {latest['n_segments']}")
     sh = latest.get("strategy_sharpe")
     cagr = latest.get("strategy_cagr")
-    print(f"  strategy_sharpe: {sh:.4f}" if sh is not None else "  strategy_sharpe: N/A")
-    print(f"  strategy_cagr: {cagr:.4f}" if cagr is not None else "  strategy_cagr: N/A")
+    print(
+        f"  strategy_sharpe: {sh:.4f}" if sh is not None else "  strategy_sharpe: N/A"
+    )
+    print(
+        f"  strategy_cagr: {cagr:.4f}" if cagr is not None else "  strategy_cagr: N/A"
+    )
     print()
     print("All runs:")
     for r in list_runs():
@@ -27,5 +31,7 @@ if __name__ == "__main__":
         cagr = r.get("strategy_cagr")
         sh_s = f"{sh:.3f}" if sh is not None else "N/A"
         cagr_s = f"{cagr:.3f}" if cagr is not None else "N/A"
-        print(f"  {r['run_id'][:8]}... | {r['created_at']} | n={r['n_segments']} | "
-              f"Sharpe={sh_s} | CAGR={cagr_s}")
+        print(
+            f"  {r['run_id'][:8]}... | {r['created_at']} | n={r['n_segments']} | "
+            f"Sharpe={sh_s} | CAGR={cagr_s}"
+        )

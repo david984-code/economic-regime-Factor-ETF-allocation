@@ -63,7 +63,11 @@ def series_to_dict(s: pd.Series) -> dict[str, float]:
 
 # yfinance sometimes returns a MultiIndex columns object
 if isinstance(prices.columns, pd.MultiIndex):
-    prices = prices["Adj Close"] if "Adj Close" in prices.columns.levels[0] else prices["Close"]
+    prices = (
+        prices["Adj Close"]
+        if "Adj Close" in prices.columns.levels[0]
+        else prices["Close"]
+    )
 else:
     prices = prices["Adj Close"] if "Adj Close" in prices.columns else prices["Close"]
 
@@ -73,7 +77,9 @@ prices = prices.dropna()
 # Load Regime Labels
 ROOT_DIR = Path(__file__).resolve().parent.parent
 OUTPUTS_DIR = ROOT_DIR / "outputs"
-regime_df = pd.read_csv(OUTPUTS_DIR / "regime_labels_expanded.csv", parse_dates=["date"])
+regime_df = pd.read_csv(
+    OUTPUTS_DIR / "regime_labels_expanded.csv", parse_dates=["date"]
+)
 regime_df.set_index("date", inplace=True)
 regime_df = regime_df.reindex(prices.index, method="ffill")
 # Clean regime strings (prevents hidden whitespace / weird characters)
@@ -120,7 +126,9 @@ def _avg_alloc(regimes: set[str]) -> dict[str, float]:
     return out
 
 
-def _blend_alloc(w_off: dict[str, float], w_on: dict[str, float], alpha: float) -> dict[str, float]:
+def _blend_alloc(
+    w_off: dict[str, float], w_on: dict[str, float], alpha: float
+) -> dict[str, float]:
     # alpha in [0,1]; 0=risk_off, 1=risk_on
     alpha = float(np.clip(alpha, 0.0, 1.0))
     w = {
@@ -139,14 +147,18 @@ W_RISK_OFF = _avg_alloc(RISK_OFF_REGIMES)
 
 
 # Build risk-on / risk-off anchors
-w_recovery = dict_to_series({str(k): float(v) for k, v in allocations["Recovery"].items()}, ASSETS)
+w_recovery = dict_to_series(
+    {str(k): float(v) for k, v in allocations["Recovery"].items()}, ASSETS
+)
 w_overheat = dict_to_series(
     {str(k): float(v) for k, v in allocations["Overheating"].items()}, ASSETS
 )
 w_contract = dict_to_series(
     {str(k): float(v) for k, v in allocations["Contraction"].items()}, ASSETS
 )
-w_stag = dict_to_series({str(k): float(v) for k, v in allocations["Stagflation"].items()}, ASSETS)
+w_stag = dict_to_series(
+    {str(k): float(v) for k, v in allocations["Stagflation"].items()}, ASSETS
+)
 
 # Risk-on = favorable growth / inflation
 w_on = 0.5 * (w_recovery + w_overheat)
@@ -196,13 +208,17 @@ for date in returns.index:
     month = date.to_period("M")
     if (prev_month is None) or (month != prev_month):
         # Prefer continuous risk_on (0..1) if present; fall back to discrete regime labels
-        if "risk_on" in regime_df.columns and (not pd.isna(regime_df.loc[date, "risk_on"])):
+        if "risk_on" in regime_df.columns and (
+            not pd.isna(regime_df.loc[date, "risk_on"])
+        ):
             alpha = float(regime_df.loc[date, "risk_on"])
             current_weights = _blend_alloc(W_RISK_OFF, W_RISK_ON, alpha)
         else:
             regime_key = REGIME_ALIASES.get(str(regime).strip(), str(regime).strip())
             if regime_key in allocations:
-                current_weights = {str(k): float(v) for k, v in allocations[regime_key].items()}
+                current_weights = {
+                    str(k): float(v) for k, v in allocations[regime_key].items()
+                }
             else:
                 print(
                     f"[WARNING] Unknown regime label '{regime}' on {date.date()} (keeping previous weights)"
@@ -218,7 +234,9 @@ for date in returns.index:
         prev_regime = regime
 
     # Compute daily return using current weights
-    daily_return = sum(returns.loc[date, a] * float(current_weights.get(a, 0.0)) for a in ASSETS)
+    daily_return = sum(
+        returns.loc[date, a] * float(current_weights.get(a, 0.0)) for a in ASSETS
+    )
     portfolio_returns_list.append(daily_return)
 
 # Convert to pandas Series for further analysis
@@ -242,12 +260,19 @@ def compute_metrics(rets: pd.Series, rf_daily: float = 0.0) -> dict[str, float]:
 
     cagr = float(equity_curve.iloc[-1] ** (1 / years) - 1)
     volatility = float(rets.std() * np.sqrt(252))
-    sharpe = (mean_daily / std_daily) * np.sqrt(252) if std_daily != 0 else float(np.nan)
+    sharpe = (
+        (mean_daily / std_daily) * np.sqrt(252) if std_daily != 0 else float(np.nan)
+    )
 
     drawdown = equity_curve / equity_curve.cummax() - 1
     max_dd = float(drawdown.min())
 
-    return {"CAGR": cagr, "Volatility": volatility, "Sharpe": sharpe, "Max Drawdown": max_dd}
+    return {
+        "CAGR": cagr,
+        "Volatility": volatility,
+        "Sharpe": sharpe,
+        "Max Drawdown": max_dd,
+    }
 
 
 # Results
@@ -289,7 +314,9 @@ print("============================")
 if asof_alpha is not None:
     base_weights = _blend_alloc(W_RISK_OFF, W_RISK_ON, asof_alpha)
 else:
-    rk: str = str(REGIME_ALIASES.get(str(asof_regime).strip(), str(asof_regime).strip()))
+    rk: str = str(
+        REGIME_ALIASES.get(str(asof_regime).strip(), str(asof_regime).strip())
+    )
     base_weights_raw = allocations.get(rk, {a: 1.0 / len(ASSETS) for a in ASSETS})
     base_weights = {str(k): float(v) for k, v in base_weights_raw.items()}
 

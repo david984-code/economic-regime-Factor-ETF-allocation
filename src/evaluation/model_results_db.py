@@ -308,14 +308,12 @@ def get_latest_run() -> dict[str, Any] | None:
     """Return metadata for the most recent run, or None if no runs exist."""
     conn = _get_conn()
     try:
-        cur = conn.execute(
-            "SELECT * FROM model_runs ORDER BY created_at DESC LIMIT 1"
-        )
+        cur = conn.execute("SELECT * FROM model_runs ORDER BY created_at DESC LIMIT 1")
         row = cur.fetchone()
         if row is None:
             return None
         cols = [d[0] for d in cur.description]
-        return dict(zip(cols, row))
+        return dict(zip(cols, row, strict=False))
     finally:
         conn.close()
 
@@ -331,7 +329,7 @@ def list_runs() -> list[dict[str, Any]]:
         )
         rows = cur.fetchall()
         cols = [d[0] for d in cur.description]
-        return [dict(zip(cols, r)) for r in rows]
+        return [dict(zip(cols, r, strict=False)) for r in rows]
     finally:
         conn.close()
 
@@ -355,7 +353,7 @@ def compare_runs(run_id_1: str, run_id_2: str) -> dict[str, Any]:
             raise ValueError(f"run_id_1 not found: {run_id_1!r}")
         if run_id_2 not in found_ids:
             raise ValueError(f"run_id_2 not found: {run_id_2!r}")
-        by_id = {r[0]: dict(zip(cols, r)) for r in rows}
+        by_id = {r[0]: dict(zip(cols, r, strict=False)) for r in rows}
         return {"run_1": by_id[run_id_1], "run_2": by_id[run_id_2]}
     finally:
         conn.close()

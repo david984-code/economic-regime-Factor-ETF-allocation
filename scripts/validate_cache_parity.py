@@ -76,7 +76,9 @@ def _compare_dict_of_dicts(name: str, a: dict, b: dict) -> bool:
             continue
         for asset in a[k]:
             if not np.isclose(a[k][asset], b[k][asset], rtol=RTOL, atol=ATOL):
-                print(f"  FAIL {name}[{k}][{asset}]: {a[k][asset]:.6f} != {b[k][asset]:.6f}")
+                print(
+                    f"  FAIL {name}[{k}][{asset}]: {a[k][asset]:.6f} != {b[k][asset]:.6f}"
+                )
                 all_ok = False
     if all_ok:
         print(f"  OK {name}")
@@ -105,10 +107,11 @@ def _compare_dict(name: str, a: dict, b: dict) -> bool:
 def run_validation() -> int:
     """Run validation. Returns 0 if all checks pass, 1 otherwise."""
     if not os.getenv("FRED_API_KEY"):
-        print("FRED_API_KEY not set. Skipping regime classification; using existing outputs.")
-        use_regime = False
+        print(
+            "FRED_API_KEY not set. Skipping regime classification; using existing outputs."
+        )
     else:
-        use_regime = True
+        pass
 
     print("\n=== Cache Parity Validation ===\n")
 
@@ -160,6 +163,7 @@ def run_validation() -> int:
     # 5. Allocations (from DB - produced by optimizer)
     print("\n[5] Optimal allocations")
     from src.utils.database import Database
+
     db = Database()
     try:
         allocs = db.load_optimal_allocations()

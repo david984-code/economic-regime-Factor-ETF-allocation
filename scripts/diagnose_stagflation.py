@@ -5,14 +5,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
-from src.config import OUTPUTS_DIR, START_DATE, TICKERS, get_end_date
-from src.data.market_ingestion import fetch_prices
 from src.allocation.optimizer import optimize_allocations_from_data
 from src.backtest.engine import run_backtest_with_allocations
 from src.backtest.metrics import compute_turnover
+from src.config import OUTPUTS_DIR, START_DATE, TICKERS, get_end_date
+from src.data.market_ingestion import fetch_prices
 from src.evaluation.benchmarks import compute_benchmark_returns
 
 ASSETS = TICKERS + ["cash"]
@@ -23,16 +23,23 @@ def _get_stagflation_segments() -> pd.DataFrame:
     r = None
     try:
         from src.evaluation.model_results_db import get_latest_run
+
         r = get_latest_run()
     except Exception:
         pass
-    csv_path = OUTPUTS_DIR / f"walk_forward_{r['run_id']}.csv" if r else OUTPUTS_DIR / "walk_forward_results.csv"
+    csv_path = (
+        OUTPUTS_DIR / f"walk_forward_{r['run_id']}.csv"
+        if r
+        else OUTPUTS_DIR / "walk_forward_results.csv"
+    )
     if not csv_path.exists():
         csv_path = OUTPUTS_DIR / "walk_forward_results.csv"
     df = pd.read_csv(csv_path)
     df = df[df["segment"] != "OVERALL"].copy()
 
-    regimes = pd.read_csv(OUTPUTS_DIR / "regime_labels_expanded.csv", parse_dates=["date"])
+    regimes = pd.read_csv(
+        OUTPUTS_DIR / "regime_labels_expanded.csv", parse_dates=["date"]
+    )
     regimes["month"] = pd.to_datetime(regimes["date"]).dt.to_period("M")
 
     seg_regimes = []
@@ -41,12 +48,22 @@ def _get_stagflation_segments() -> pd.DataFrame:
         te = pd.Period(row["test_end"], freq="M")
         sub = regimes[(regimes["month"] >= ts) & (regimes["month"] <= te)]
         if len(sub) > 0:
-            dom = sub["regime"].mode().iloc[0] if len(sub["regime"].mode()) > 0 else "Unknown"
+            dom = (
+                sub["regime"].mode().iloc[0]
+                if len(sub["regime"].mode()) > 0
+                else "Unknown"
+            )
             pct_stag = (sub["regime"] == "Stagflation").mean()
             pct_cont = (sub["regime"] == "Contraction").mean()
         else:
             dom, pct_stag, pct_cont = "Unknown", 0, 0
-        seg_regimes.append({"dominant_regime": dom, "pct_stagflation": pct_stag, "pct_contraction": pct_cont})
+        seg_regimes.append(
+            {
+                "dominant_regime": dom,
+                "pct_stagflation": pct_stag,
+                "pct_contraction": pct_cont,
+            }
+        )
     df = pd.concat([df, pd.DataFrame(seg_regimes)], axis=1)
     return df[df["dominant_regime"] == "Stagflation"]
 
@@ -72,7 +89,9 @@ def _run_segment_diagnostic(
     allocations = optimize_allocations_from_data(train_returns, train_regimes)
     if not allocations:
         return None
-    result = run_backtest_with_allocations(prices, regime_df, allocations, return_weights=True)
+    result = run_backtest_with_allocations(
+        prices, regime_df, allocations, return_weights=True
+    )
     if isinstance(result, tuple):
         strat_rets, strat_weights = result
     else:
@@ -93,9 +112,12 @@ def _run_segment_diagnostic(
 
     test_regimes = regime_df.loc[test_start:test_end].resample("ME").last()
     regime_dist = test_regimes["regime"].value_counts(normalize=True)
-    risk_on_avg = test_regimes["risk_on"].mean() if "risk_on" in test_regimes.columns else np.nan
+    risk_on_avg = (
+        test_regimes["risk_on"].mean() if "risk_on" in test_regimes.columns else np.nan
+    )
 
     from src.backtest.metrics import compute_metrics
+
     rf = (1.045) ** (1 / 252) - 1
     strat_m = compute_metrics(test_rets, rf_daily=rf)
     bench_metrics = {}
@@ -135,7 +157,9 @@ def main() -> None:
     print(f"Found {len(stag_df)} Stagflation-dominant segments")
 
     prices = fetch_prices(start=START_DATE, end=get_end_date())
-    regime_df = pd.read_csv(OUTPUTS_DIR / "regime_labels_expanded.csv", parse_dates=["date"])
+    regime_df = pd.read_csv(
+        OUTPUTS_DIR / "regime_labels_expanded.csv", parse_dates=["date"]
+    )
     regime_df = regime_df.dropna(subset=["regime"]).set_index("date").sort_index()
     if regime_df.index.duplicated().any():
         regime_df = regime_df[~regime_df.index.duplicated(keep="last")]
@@ -151,8 +175,13 @@ def main() -> None:
         train_start = pd.Timestamp(START_DATE)
         seg_idx = int(row["segment"])
         diag = _run_segment_diagnostic(
-            seg_idx, train_start, train_end, test_start, test_end,
-            prices, regime_df,
+            seg_idx,
+            train_start,
+            train_end,
+            test_start,
+            test_end,
+            prices,
+            regime_df,
         )
         if diag:
             seg_list.append(diag)
@@ -167,22 +196,28 @@ def main() -> None:
     print("=" * 80)
     rows = []
     for d in seg_list[:15]:  # first 15
-        rows.append({
-            "test_start": d["test_start"],
-            "test_end": d["test_end"],
-            "Strategy_CAGR": d["strategy_cagr"],
-            "Strategy_Sharpe": d["strategy_sharpe"],
-            "Strategy_MaxDD": d["strategy_maxdd"],
-            "Strategy_Vol": d["strategy_vol"],
-            "Strategy_Turnover": d["strategy_turnover"],
-            "SPY_CAGR": d["spy_cagr"],
-            "60/40_CAGR": d["b60_40_cagr"],
-            "EqW_CAGR": d["eqw_cagr"],
-            "RiskOnOff_CAGR": d["risk_on_off_cagr"],
-            "risk_on_avg": d["risk_on_avg"],
-        })
+        rows.append(
+            {
+                "test_start": d["test_start"],
+                "test_end": d["test_end"],
+                "Strategy_CAGR": d["strategy_cagr"],
+                "Strategy_Sharpe": d["strategy_sharpe"],
+                "Strategy_MaxDD": d["strategy_maxdd"],
+                "Strategy_Vol": d["strategy_vol"],
+                "Strategy_Turnover": d["strategy_turnover"],
+                "SPY_CAGR": d["spy_cagr"],
+                "60/40_CAGR": d["b60_40_cagr"],
+                "EqW_CAGR": d["eqw_cagr"],
+                "RiskOnOff_CAGR": d["risk_on_off_cagr"],
+                "risk_on_avg": d["risk_on_avg"],
+            }
+        )
     tbl = pd.DataFrame(rows)
-    print(tbl.to_string(index=False, float_format=lambda x: f"{x:.4f}" if pd.notna(x) else "N/A"))
+    print(
+        tbl.to_string(
+            index=False, float_format=lambda x: f"{x:.4f}" if pd.notna(x) else "N/A"
+        )
+    )
     if len(seg_list) > 15:
         print(f"... and {len(seg_list) - 15} more segments")
 
@@ -192,7 +227,11 @@ def main() -> None:
     print("=" * 80)
     all_avg = {}
     for a in ASSETS:
-        vals = [d["avg_weights"].get(a, 0) for d in seg_list if isinstance(d["avg_weights"].get(a), (int, float))]
+        vals = [
+            d["avg_weights"].get(a, 0)
+            for d in seg_list
+            if isinstance(d["avg_weights"].get(a), (int, float))
+        ]
         all_avg[a] = np.mean(vals) if vals else 0
     for a, w in sorted(all_avg.items(), key=lambda x: -x[1]):
         print(f"  {a:>6}: {w:.2%}")
@@ -203,7 +242,11 @@ def main() -> None:
 
     # risk_on analysis
     risk_on_vals = [d["risk_on_avg"] for d in seg_list if pd.notna(d["risk_on_avg"])]
-    print(f"\nAverage risk_on during Stagflation test periods: {np.mean(risk_on_vals):.3f}" if risk_on_vals else "\nrisk_on: N/A")
+    print(
+        f"\nAverage risk_on during Stagflation test periods: {np.mean(risk_on_vals):.3f}"
+        if risk_on_vals
+        else "\nrisk_on: N/A"
+    )
 
     # Simple alternative
     print("\n" + "=" * 80)
@@ -213,7 +256,12 @@ def main() -> None:
     rets = rets.pct_change().iloc[1:]
     if "cash" not in rets.columns:
         rets["cash"] = (1.045) ** (1 / 252) - 1
-    alt_ret = 0.30 * rets["GLD"] + 0.40 * rets["IEF"] + 0.20 * rets["TLT"] + 0.10 * rets["cash"]
+    alt_ret = (
+        0.30 * rets["GLD"]
+        + 0.40 * rets["IEF"]
+        + 0.20 * rets["TLT"]
+        + 0.10 * rets["cash"]
+    )
     for d in seg_list[:5]:
         ts, te = d["test_start"], d["test_end"]
         ts_d = pd.Period(ts, freq="M").to_timestamp("M")
@@ -221,8 +269,11 @@ def main() -> None:
         sub = alt_ret.loc[ts_d:te_d].dropna()
         if len(sub) >= 5:
             from src.backtest.metrics import compute_metrics
-            m = compute_metrics(sub, rf_daily=(1.045)**(1/252)-1)
-            print(f"  {ts} to {te}: Alt CAGR={m['CAGR']:.2%}, Strategy={d['strategy_cagr']:.2%}")
+
+            m = compute_metrics(sub, rf_daily=(1.045) ** (1 / 252) - 1)
+            print(
+                f"  {ts} to {te}: Alt CAGR={m['CAGR']:.2%}, Strategy={d['strategy_cagr']:.2%}"
+            )
 
     print("\n" + "=" * 80)
     print("DIAGNOSIS SUMMARY")
@@ -231,7 +282,15 @@ def main() -> None:
     avg_spy_cagr = np.mean([d["spy_cagr"] for d in seg_list])
     avg_risk_on = np.mean(risk_on_vals) if risk_on_vals else 0.5
     avg_gld = np.mean([d["avg_weights"].get("GLD", 0) for d in seg_list])
-    avg_equity = np.mean([sum(d["avg_weights"].get(t, 0) for t in ["SPY","MTUM","VLUE","USMV","QUAL","IJR","VIG"]) for d in seg_list])
+    avg_equity = np.mean(
+        [
+            sum(
+                d["avg_weights"].get(t, 0)
+                for t in ["SPY", "MTUM", "VLUE", "USMV", "QUAL", "IJR", "VIG"]
+            )
+            for d in seg_list
+        ]
+    )
     print(f"  Strategy avg CAGR in Stagflation: {avg_strat_cagr:.2%}")
     print(f"  SPY avg CAGR in Stagflation: {avg_spy_cagr:.2%}")
     print(f"  Avg risk_on during Stagflation: {avg_risk_on:.3f}")

@@ -7,7 +7,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import pandas as pd
 
 from src.config import OUTPUTS_DIR
 from src.evaluation.walk_forward import run_walk_forward_evaluation
@@ -21,9 +20,9 @@ def _run_baseline():
     logger.info("=" * 80)
     logger.info("PROFILING: Full baseline (24M momentum, equal_weight, all segments)")
     logger.info("=" * 80)
-    
+
     start_time = time.perf_counter()
-    
+
     df = run_walk_forward_evaluation(
         min_train_months=60,
         test_months=12,
@@ -38,20 +37,22 @@ def _run_baseline():
         portfolio_construction_method="equal_weight",
         show_timing=True,
     )
-    
+
     elapsed_ms = (time.perf_counter() - start_time) * 1000
-    
+
     return df, elapsed_ms
 
 
 def _run_fast_mode(max_segments: int = 20):
     """Run fast mode experiment with timing."""
     logger.info("=" * 80)
-    logger.info(f"PROFILING: Fast mode (recent 8 years, max {max_segments} segments, no persist, with cache)")
+    logger.info(
+        f"PROFILING: Fast mode (recent 8 years, max {max_segments} segments, no persist, with cache)"
+    )
     logger.info("=" * 80)
-    
+
     start_time = time.perf_counter()
-    
+
     df = run_walk_forward_evaluation(
         min_train_months=60,
         test_months=12,
@@ -70,9 +71,9 @@ def _run_fast_mode(max_segments: int = 20):
         use_cache=True,
         show_timing=True,
     )
-    
+
     elapsed_ms = (time.perf_counter() - start_time) * 1000
-    
+
     return df, elapsed_ms
 
 
@@ -80,17 +81,17 @@ def main():
     """Profile runtime and compare full vs fast mode."""
     logger.info("\nRUNTIME OPTIMIZATION PROFILE")
     logger.info("=" * 80)
-    
+
     # Run full baseline
     baseline_df, baseline_time = _run_baseline()
-    
+
     if baseline_df.empty:
         logger.error("Baseline experiment failed.")
         sys.exit(1)
-    
+
     baseline_overall = baseline_df[baseline_df["segment"] == "OVERALL"].iloc[0]
     baseline_n_segments = len(baseline_df) - 1  # Exclude OVERALL row
-    
+
     logger.info("")
     logger.info("=" * 80)
     logger.info("BASELINE RESULTS")
@@ -101,17 +102,17 @@ def main():
     logger.info(f"CAGR: {baseline_overall['Strategy_CAGR']:.2%}")
     logger.info(f"Sharpe: {baseline_overall['Strategy_Sharpe']:.3f}")
     logger.info("")
-    
+
     # Run fast mode (20 most recent segments)
     fast_df, fast_time = _run_fast_mode(max_segments=20)
-    
+
     if fast_df.empty:
         logger.error("Fast mode experiment failed.")
         sys.exit(1)
-    
+
     fast_overall = fast_df[fast_df["segment"] == "OVERALL"].iloc[0]
     fast_n_segments = len(fast_df) - 1
-    
+
     logger.info("")
     logger.info("=" * 80)
     logger.info("FAST MODE RESULTS")
@@ -122,11 +123,11 @@ def main():
     logger.info(f"CAGR: {fast_overall['Strategy_CAGR']:.2%}")
     logger.info(f"Sharpe: {fast_overall['Strategy_Sharpe']:.3f}")
     logger.info("")
-    
+
     # Speedup analysis
     speedup = baseline_time / fast_time if fast_time > 0 else 0
     time_saved = baseline_time - fast_time
-    
+
     logger.info("=" * 80)
     logger.info("SPEEDUP ANALYSIS")
     logger.info("=" * 80)
@@ -135,20 +136,22 @@ def main():
     logger.info(f"Time saved: {time_saved / 1000:.1f}s")
     logger.info(f"Speedup: {speedup:.2f}x")
     logger.info("")
-    logger.info(f"Segments reduced: {baseline_n_segments} -> {fast_n_segments} ({(1 - fast_n_segments / baseline_n_segments) * 100:.0f}% reduction)")
+    logger.info(
+        f"Segments reduced: {baseline_n_segments} -> {fast_n_segments} ({(1 - fast_n_segments / baseline_n_segments) * 100:.0f}% reduction)"
+    )
     logger.info("")
-    
+
     # Estimate full experiment suite runtime
     n_configs = 4  # Typical number of configs in an experiment
     baseline_suite_time = baseline_time * n_configs / 1000 / 60
     fast_suite_time = fast_time * n_configs / 1000 / 60
-    
+
     logger.info("ESTIMATED EXPERIMENT SUITE RUNTIME (4 configs):")
     logger.info(f"  Full mode: {baseline_suite_time:.1f} minutes")
     logger.info(f"  Fast mode: {fast_suite_time:.1f} minutes")
     logger.info(f"  Time saved: {baseline_suite_time - fast_suite_time:.1f} minutes")
     logger.info("")
-    
+
     # Build report
     report_lines = [
         "# Experiment Runtime Optimization Report",
@@ -256,19 +259,19 @@ def main():
         "    --show-timing",
         "```",
     ]
-    
+
     report = "\n".join(report_lines)
-    
+
     output_path = OUTPUTS_DIR / "RUNTIME_OPTIMIZATION_REPORT.md"
     output_path.write_text(report, encoding="utf-8")
     logger.info(f"Report saved to {output_path}")
-    
+
     logger.info("")
     logger.info("=" * 80)
     logger.info("PROFILING COMPLETE")
     logger.info("=" * 80)
     logger.info(f"Speedup: {speedup:.2f}x")
-    logger.info(f"Recommended for fast iteration: --fast-mode --show-timing")
+    logger.info("Recommended for fast iteration: --fast-mode --show-timing")
     logger.info("")
 
 

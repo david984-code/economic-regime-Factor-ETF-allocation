@@ -38,8 +38,8 @@ def main() -> int:
     print(f"All match:         {all_match}")
     print()
     print("Timing:")
-    print(f"  Old (apply):     {report['old_time_sec']*1000:.2f} ms")
-    print(f"  New (vectorized): {report['new_time_sec']*1000:.2f} ms")
+    print(f"  Old (apply):     {report['old_time_sec'] * 1000:.2f} ms")
+    print(f"  New (vectorized): {report['new_time_sec'] * 1000:.2f} ms")
     print(f"  Speedup:         {report['speedup']:.1f}x")
     print()
 

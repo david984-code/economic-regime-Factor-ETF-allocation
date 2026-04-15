@@ -5,9 +5,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
 from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl import Workbook
 
 from src.config import OUTPUTS_DIR
 
@@ -63,7 +63,9 @@ def format_allocations_to_excel() -> Path:
             cell.alignment = Alignment(horizontal="left")
 
     pct_fmt = "0." + ("0" * PCT_DECIMALS) + "%"
-    for row in ws.iter_rows(min_row=2, min_col=2, max_row=ws.max_row, max_col=ws.max_column):
+    for row in ws.iter_rows(
+        min_row=2, min_col=2, max_row=ws.max_row, max_col=ws.max_column
+    ):
         for cell in row:
             if isinstance(cell.value, (int, float, np.floating)):
                 cell.number_format = pct_fmt

@@ -38,7 +38,9 @@ def _get_fred_series_cached(
     s = fred.get_series(series_id, observation_end=end_date)
     s.index = pd.to_datetime(s.index)
     _FRED_CACHE[key] = s.copy()
-    logger.debug("[FRED] Cache MISS: %s (end=%s) - fetched from API", series_id, end_date)
+    logger.debug(
+        "[FRED] Cache MISS: %s (end=%s) - fetched from API", series_id, end_date
+    )
     return s
 
 
@@ -61,7 +63,9 @@ def fetch_fred_core(api_key: str, end_date: str | None = None) -> tuple[pd.Serie
     return _fetch_fred_core_impl(api_key, end_date, use_local_cache=False)
 
 
-def fetch_fred_core_cached(api_key: str, end_date: str | None = None) -> tuple[pd.Series, ...]:
+def fetch_fred_core_cached(
+    api_key: str, end_date: str | None = None
+) -> tuple[pd.Series, ...]:
     """Fetch core FRED series with local cache and incremental API when possible."""
     return _fetch_fred_core_impl(api_key, end_date, use_local_cache=True)
 
@@ -111,12 +115,16 @@ def _fetch_fred_core_impl(
     return gdp, cpi, yield_10y, yield_3m, m2, velocity
 
 
-def fetch_fred_optional(api_key: str, end_date: str | None = None) -> dict[str, pd.Series]:
+def fetch_fred_optional(
+    api_key: str, end_date: str | None = None
+) -> dict[str, pd.Series]:
     """Fetch optional FRED series. Full API fetch (no local cache)."""
     return _fetch_fred_optional_impl(api_key, end_date, use_local_cache=False)
 
 
-def fetch_fred_optional_cached(api_key: str, end_date: str | None = None) -> dict[str, pd.Series]:
+def fetch_fred_optional_cached(
+    api_key: str, end_date: str | None = None
+) -> dict[str, pd.Series]:
     """Fetch optional FRED series with local cache and incremental API."""
     return _fetch_fred_optional_impl(api_key, end_date, use_local_cache=True)
 
@@ -142,7 +150,13 @@ def _fetch_fred_optional_impl(
                 src = "api"
             if len(s) > 12:
                 out[name] = s
-                logger.info("FRED optional: %s (%s) latest %s [%s]", name, series_id, s.index.max(), src)
+                logger.info(
+                    "FRED optional: %s (%s) latest %s [%s]",
+                    name,
+                    series_id,
+                    s.index.max(),
+                    src,
+                )
         except Exception as e:
             logger.debug("FRED %s (%s) failed: %s", name, series_id, e)
 

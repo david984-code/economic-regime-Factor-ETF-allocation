@@ -10,6 +10,8 @@ import pytest
 
 from src.models.regime_classifier import (
     RegimeClassifier as EconomicRegimeClassifier,
+)
+from src.models.regime_classifier import (
     run_parity_check,
 )
 
@@ -41,7 +43,9 @@ class TestEconomicRegimeClassifier:
         """Test rolling z-score normalization."""
         series = pd.Series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10] * 10)
 
-        result = EconomicRegimeClassifier.rolling_z_score(series, window=10, min_periods=5)
+        result = EconomicRegimeClassifier.rolling_z_score(
+            series, window=10, min_periods=5
+        )
 
         assert isinstance(result, pd.Series)
         assert len(result) == len(series)
@@ -96,7 +100,9 @@ class TestEconomicRegimeClassifier:
 
         assert result == "Unknown"
 
-    def test_classify_regimes_dataframe(self, classifier: EconomicRegimeClassifier) -> None:
+    def test_classify_regimes_dataframe(
+        self, classifier: EconomicRegimeClassifier
+    ) -> None:
         """Test regime classification on full dataframe."""
         df = pd.DataFrame(
             {
@@ -107,7 +113,13 @@ class TestEconomicRegimeClassifier:
 
         result = classifier.classify_regimes(df)
 
-        expected_regimes = ["Recovery", "Stagflation", "Overheating", "Contraction", "Unknown"]
+        expected_regimes = [
+            "Recovery",
+            "Stagflation",
+            "Overheating",
+            "Contraction",
+            "Unknown",
+        ]
         assert list(result["regime"]) == expected_regimes
 
     def test_vectorized_parity(self) -> None:
@@ -224,7 +236,9 @@ class TestEconomicRegimeClassifier:
             classifier.save_results(df, tmp_path)
             # Test passes if no exception is raised
 
-    def test_build_dataframe_structure(self, classifier: EconomicRegimeClassifier) -> None:
+    def test_build_dataframe_structure(
+        self, classifier: EconomicRegimeClassifier
+    ) -> None:
         """Test dataframe construction from economic indicators."""
         dates = pd.date_range("2020-01-01", periods=5, freq="ME")
         gdp = pd.Series([100, 102, 103, 105, 104], index=dates)
@@ -236,7 +250,15 @@ class TestEconomicRegimeClassifier:
 
         result = classifier.build_dataframe(gdp, cpi, yield_10y, yield_3m, m2, velocity)
 
-        expected_cols = ["gdp", "cpi", "gdp_mom", "cpi_mom", "m2_mom", "vel_mom", "yield_curve"]
+        expected_cols = [
+            "gdp",
+            "cpi",
+            "gdp_mom",
+            "cpi_mom",
+            "m2_mom",
+            "vel_mom",
+            "yield_curve",
+        ]
         assert all(col in result.columns for col in expected_cols)
         assert len(result) == 5
 

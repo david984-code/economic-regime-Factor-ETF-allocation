@@ -117,7 +117,14 @@ def generate_target_weights() -> dict[str, float]:
     trailing_pl = pl.from_pandas(trailing)
     scaled = vol_scaled_weights(base_weights, trailing_pl, list(TICKERS))
 
-    logger.info("Target weights: %s", {k: f"{v:.3f}" for k, v in sorted(scaled.items(), key=lambda x: x[1], reverse=True) if v > 0.005})
+    logger.info(
+        "Target weights: %s",
+        {
+            k: f"{v:.3f}"
+            for k, v in sorted(scaled.items(), key=lambda x: x[1], reverse=True)
+            if v > 0.005
+        },
+    )
     return {k: float(v) for k, v in scaled.items() if v > 0.001}
 
 
@@ -252,7 +259,9 @@ def run_auto_rebalance() -> dict[str, Any]:
 
         # Duplicate run protection
         marker_path = report_dir / "last_paper_submission.json"
-        if rebal.get("duplicate_run_protection", True) and duplicate_run_refuse(marker_path):
+        if rebal.get("duplicate_run_protection", True) and duplicate_run_refuse(
+            marker_path
+        ):
             result["action"] = "skip"
             result["reason"] = "Already submitted today (duplicate protection)"
             logger.info("[REBALANCE] %s", result["reason"])
@@ -275,8 +284,12 @@ def run_auto_rebalance() -> dict[str, Any]:
         # Submit
         order_type = rebal.get("order_type", "MKT")
         account = config.get("account") or ""
-        logger.info("[REBALANCE] Submitting %d paper orders...", len(preview.proposed_orders))
-        submitted = submit_paper_orders(preview.proposed_orders, order_type=order_type, account=account)
+        logger.info(
+            "[REBALANCE] Submitting %d paper orders...", len(preview.proposed_orders)
+        )
+        submitted = submit_paper_orders(
+            preview.proposed_orders, order_type=order_type, account=account
+        )
 
         write_submission_marker(
             marker_path,
@@ -306,7 +319,9 @@ def run_auto_rebalance() -> dict[str, Any]:
             logger.warning("[REBALANCE] Reconciliation failed (non-fatal): %s", e)
 
     # Save auto-rebalance report
-    report_path = report_dir / f"auto_rebalance_{datetime.now().strftime('%Y%m%d')}.json"
+    report_path = (
+        report_dir / f"auto_rebalance_{datetime.now().strftime('%Y%m%d')}.json"
+    )
     report_dir.mkdir(parents=True, exist_ok=True)
     with open(report_path, "w") as f:
         json.dump(result, f, indent=2, default=str)

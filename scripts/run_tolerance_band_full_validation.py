@@ -23,7 +23,10 @@ import numpy as np
 import pandas as pd
 
 from src.config import (
-    ASSETS, RISK_OFF_ASSETS_BASE, RISK_ON_ASSETS_BASE, TICKERS, VOL_LOOKBACK,
+    RISK_OFF_ASSETS_BASE,
+    RISK_ON_ASSETS_BASE,
+    TICKERS,
+    VOL_LOOKBACK,
 )
 from src.data.market_ingestion import fetch_prices
 from src.evaluation.walk_forward import run_walk_forward_evaluation
@@ -32,41 +35,42 @@ from src.features.transforms import sigmoid
 logging.basicConfig(level=logging.WARNING)
 
 FULL_START = "2010-01-01"
-FULL_END   = None
-TAU        = 0.015
+FULL_END = None
+TAU = 0.015
 
 # Accepted walk-forward baseline (full history prior runs)
-KNOWN_BASE_CAGR   = 0.075
+KNOWN_BASE_CAGR = 0.075
 KNOWN_BASE_SHARPE = 0.52
-KNOWN_BASE_TO     = 1.18
+KNOWN_BASE_TO = 1.18
 
-SHARED_KWARGS = dict(
-    start=FULL_START,
-    end=FULL_END,
-    min_train_months=60,
-    test_months=12,
-    expanding=True,
-    use_stagflation_override=False,
-    use_stagflation_risk_on_cap=False,
-    use_regime_smoothing=False,
-    use_hybrid_signal=True,
-    hybrid_macro_weight=0.0,
-    use_momentum=True,
-    trend_filter_type="none",
-    vol_scaling_method="none",
-    portfolio_construction_method="equal_weight",
-    momentum_12m_weight=0.0,
-    quarterly_rebalance=False,
-    fast_mode=False,
-    skip_persist=True,
-    use_vol_regime=False,
-    market_lookback_months=24,
-)
+SHARED_KWARGS = {
+    "start": FULL_START,
+    "end": FULL_END,
+    "min_train_months": 60,
+    "test_months": 12,
+    "expanding": True,
+    "use_stagflation_override": False,
+    "use_stagflation_risk_on_cap": False,
+    "use_regime_smoothing": False,
+    "use_hybrid_signal": True,
+    "hybrid_macro_weight": 0.0,
+    "use_momentum": True,
+    "trend_filter_type": "none",
+    "vol_scaling_method": "none",
+    "portfolio_construction_method": "equal_weight",
+    "momentum_12m_weight": 0.0,
+    "quarterly_rebalance": False,
+    "fast_mode": False,
+    "skip_persist": True,
+    "use_vol_regime": False,
+    "market_lookback_months": 24,
+}
 
 
 # ---------------------------------------------------------------------------
 # Helpers — formatting
 # ---------------------------------------------------------------------------
+
 
 def _pct(v: float, sign: bool = False) -> str:
     if np.isnan(v):
@@ -105,11 +109,16 @@ def _filter_year_range(segs: pd.DataFrame, y0: int, y1: int) -> pd.DataFrame:
             return ts <= y1 and te >= y0
         except Exception:
             return False
+
     return segs[segs.apply(overlaps, axis=1)]
 
 
 def _mean(segs: pd.DataFrame, col: str) -> float:
-    return float(segs[col].dropna().mean()) if col in segs.columns and len(segs) else float("nan")
+    return (
+        float(segs[col].dropna().mean())
+        if col in segs.columns and len(segs)
+        else float("nan")
+    )
 
 
 def _sortino_approx(segs: pd.DataFrame) -> float:
@@ -120,6 +129,7 @@ def _sortino_approx(segs: pd.DataFrame) -> float:
 # ---------------------------------------------------------------------------
 # Analytical weight reconstruction for trade suppression diagnostics
 # ---------------------------------------------------------------------------
+
 
 def _compute_risk_on_me(spy_monthly: pd.Series, lookback: int = 24) -> pd.Series:
     """Reproduce engine risk_on pipeline: momentum -> expanding z-score -> sigmoid."""
@@ -152,19 +162,19 @@ def _vol_scaled_weights(risk_on: float, std_dict: dict) -> dict[str, float]:
     n_rof = len(rof_sleeve)
 
     # Equal-weight base per sleeve
-    w_ro_eq  = {a: 1.0 / n_ro  for a in ro_sleeve}
-    w_rof_eq = {a: 1.0 / n_rof for a in rof_sleeve}
+    w_ro_eq = dict.fromkeys(ro_sleeve, 1.0 / n_ro)
+    w_rof_eq = dict.fromkeys(rof_sleeve, 1.0 / n_rof)
 
     # Inverse-vol scaling within each sleeve
     def _invvol(sleeve_w: dict, std_dict: dict) -> dict:
         invvols = {}
-        for a, w in sleeve_w.items():
+        for a, _w in sleeve_w.items():
             s = std_dict.get(a)
             invvols[a] = 1.0 / s if (s is not None and s > 0) else 1.0
         total = sum(invvols.values())
         return {a: v / total for a, v in invvols.items()} if total > 0 else sleeve_w
 
-    w_ro_iv  = _invvol(w_ro_eq,  std_dict)
+    w_ro_iv = _invvol(w_ro_eq, std_dict)
     w_rof_iv = _invvol(w_rof_eq, std_dict)
 
     # Blend by risk_on
@@ -180,8 +190,9 @@ def _vol_scaled_weights(risk_on: float, std_dict: dict) -> dict[str, float]:
     return blended
 
 
-def _apply_tolerance(new_w: np.ndarray, prev_w: np.ndarray,
-                     tau: float, asset_order: list) -> np.ndarray:
+def _apply_tolerance(
+    new_w: np.ndarray, prev_w: np.ndarray, tau: float, asset_order: list
+) -> np.ndarray:
     """Trade-vector filter: suppress trades where |delta| <= tau, then renorm."""
     trade = new_w - prev_w
     exec_trade = np.where(np.abs(trade) > tau, trade, 0.0)
@@ -190,8 +201,9 @@ def _apply_tolerance(new_w: np.ndarray, prev_w: np.ndarray,
     return (w_exec / total) if total > 0 else new_w
 
 
-def _reconstruct_weights_daily(prices: pd.DataFrame, tau: float = 0.0
-                                ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def _reconstruct_weights_daily(
+    prices: pd.DataFrame, tau: float = 0.0
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Reconstruct daily weight snapshots (weight at each rebalance date) for
     both baseline (tau=0) and experiment (tau>0). Also return the monthly
@@ -218,8 +230,8 @@ def _reconstruct_weights_daily(prices: pd.DataFrame, tau: float = 0.0
     rebal_dates = daily_index[month_changed]
 
     # Initialise weight arrays
-    prev_base = np.ones(n_assets) / n_assets
-    prev_exp  = np.ones(n_assets) / n_assets
+    np.ones(n_assets) / n_assets
+    prev_exp = np.ones(n_assets) / n_assets
 
     rec_base, rec_exp, rec_ro, rec_dates = [], [], [], []
 
@@ -237,8 +249,12 @@ def _reconstruct_weights_daily(prices: pd.DataFrame, tau: float = 0.0
             std_row = rolling_std.iloc[0]
         else:
             std_row = rolling_std.loc[std_idx]
-        std_dict = {a: float(std_row[a]) if a in std_row.index and pd.notna(std_row[a]) else None
-                    for a in TICKERS}
+        std_dict = {
+            a: float(std_row[a])
+            if a in std_row.index and pd.notna(std_row[a])
+            else None
+            for a in TICKERS
+        }
 
         # Compute target weights
         wdict = _vol_scaled_weights(ro, std_dict)
@@ -249,23 +265,27 @@ def _reconstruct_weights_daily(prices: pd.DataFrame, tau: float = 0.0
         # Experiment (trade-vector filter)
         exp_w = _apply_tolerance(new_w, prev_exp, tau, all_assets)
 
-        prev_base = base_w
-        prev_exp  = exp_w
+        prev_exp = exp_w
 
         rec_base.append(base_w)
         rec_exp.append(exp_w)
         rec_ro.append(ro)
         rec_dates.append(rd)
 
-    w_base_me = pd.DataFrame(rec_base, index=pd.DatetimeIndex(rec_dates), columns=all_assets)
-    w_exp_me  = pd.DataFrame(rec_exp,  index=pd.DatetimeIndex(rec_dates), columns=all_assets)
-    ro_me     = pd.Series(rec_ro, index=pd.DatetimeIndex(rec_dates), name="risk_on")
+    w_base_me = pd.DataFrame(
+        rec_base, index=pd.DatetimeIndex(rec_dates), columns=all_assets
+    )
+    w_exp_me = pd.DataFrame(
+        rec_exp, index=pd.DatetimeIndex(rec_dates), columns=all_assets
+    )
+    ro_me = pd.Series(rec_ro, index=pd.DatetimeIndex(rec_dates), name="risk_on")
 
     return w_base_me, w_exp_me, ro_me
 
 
-def _suppression_stats(w_base: pd.DataFrame, w_exp: pd.DataFrame,
-                       all_assets: list, tau: float) -> dict:
+def _suppression_stats(
+    w_base: pd.DataFrame, w_exp: pd.DataFrame, all_assets: list, tau: float
+) -> dict:
     """Compute per-asset suppression statistics by comparing target vs executed weights."""
     n = len(w_base)
     stats = {"n_rebalances": n}
@@ -280,7 +300,7 @@ def _suppression_stats(w_base: pd.DataFrame, w_exp: pd.DataFrame,
     # Median suppressed assets per month
     suppressed_counts = suppressed_mat.sum(axis=1)
     stats["median_suppressed_per_month"] = float(suppressed_counts.median())
-    stats["mean_suppressed_per_month"]   = float(suppressed_counts.mean())
+    stats["mean_suppressed_per_month"] = float(suppressed_counts.mean())
 
     # Per-asset suppression frequency (% of months where filter changed that asset's weight)
     per_asset = {}
@@ -300,6 +320,7 @@ def _suppression_stats(w_base: pd.DataFrame, w_exp: pd.DataFrame,
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main():
     print("=" * 72)
     print("FULL WALK-FORWARD VALIDATION: Tolerance-Band Filter  tau = 1.5%")
@@ -318,7 +339,7 @@ def main():
     if VOL_LOOKBACK != 63:
         print("STOP: VOL_LOOKBACK != 63.")
         sys.exit(1)
-    print(f"market_lookback_months = 24  [both runs]")
+    print("market_lookback_months = 24  [both runs]")
     print(f"tolerance: 0.000 (baseline)  /  {TAU:.3f} (experiment)")
     print("Parameter diff: tolerance only. All else identical.")
 
@@ -345,50 +366,59 @@ def main():
     n_segs = len(segs_b)
     print(f"OOS segment count: {n_segs}")
     oos_start = segs_b["test_start"].iloc[0]
-    oos_end   = segs_b["test_end"].iloc[-1]
+    oos_end = segs_b["test_end"].iloc[-1]
     print(f"OOS coverage: {oos_start} to {oos_end}")
 
     ob = _overall(df_base)
     oe = _overall(df_exp)
 
-    cagr_b = _m(ob, "Strategy_CAGR");   cagr_e = _m(oe, "Strategy_CAGR")
-    shr_b  = _m(ob, "Strategy_Sharpe"); shr_e  = _m(oe, "Strategy_Sharpe")
-    mdd_b  = _m(ob, "Strategy_MaxDD");  mdd_e  = _m(oe, "Strategy_MaxDD")
-    vol_b  = _m(ob, "Strategy_Vol");    vol_e  = _m(oe, "Strategy_Vol")
-    to_b   = _m(ob, "Strategy_Turnover"); to_e = _m(oe, "Strategy_Turnover")
+    cagr_b = _m(ob, "Strategy_CAGR")
+    cagr_e = _m(oe, "Strategy_CAGR")
+    shr_b = _m(ob, "Strategy_Sharpe")
+    shr_e = _m(oe, "Strategy_Sharpe")
+    mdd_b = _m(ob, "Strategy_MaxDD")
+    mdd_e = _m(oe, "Strategy_MaxDD")
+    vol_b = _m(ob, "Strategy_Vol")
+    vol_e = _m(oe, "Strategy_Vol")
+    to_b = _m(ob, "Strategy_Turnover")
+    to_e = _m(oe, "Strategy_Turnover")
     has_to = not (np.isnan(to_b) or np.isnan(to_e))
 
     cagr_d = cagr_e - cagr_b
-    shr_d  = shr_e  - shr_b
-    mdd_d  = mdd_e  - mdd_b
-    vol_d  = vol_e  - vol_b
-    to_d   = (to_e - to_b) if has_to else float("nan")
-    to_r   = (to_e / to_b) if (has_to and to_b > 0) else float("nan")
+    shr_d = shr_e - shr_b
+    mdd_d = mdd_e - mdd_b
+    vol_d = vol_e - vol_b
+    to_d = (to_e - to_b) if has_to else float("nan")
+    to_r = (to_e / to_b) if (has_to and to_b > 0) else float("nan")
 
     # =========================================================================
     print("\n" + "=" * 72)
     print("1. FULL-PERIOD METRICS vs BASELINE")
     print("=" * 72)
-    print(f"\n   Known full-history baseline: CAGR~{KNOWN_BASE_CAGR:.1%}  "
-          f"Sharpe~{KNOWN_BASE_SHARPE:.2f}  TO~{KNOWN_BASE_TO:.0%}")
-    print(f"   (Current baseline may differ slightly due to date updates)\n")
+    print(
+        f"\n   Known full-history baseline: CAGR~{KNOWN_BASE_CAGR:.1%}  "
+        f"Sharpe~{KNOWN_BASE_SHARPE:.2f}  TO~{KNOWN_BASE_TO:.0%}"
+    )
+    print("   (Current baseline may differ slightly due to date updates)\n")
     print(f"   {'Metric':30} {'Baseline':>14} {'Exp (tau=1.5%)':>14} {'Delta':>10}")
     print("   " + "-" * 70)
     rows = [
-        ("CAGR",    _pct(cagr_b), _pct(cagr_e), _pct(cagr_d, sign=True)),
-        ("Sharpe",  _f(shr_b),    _f(shr_e),    _f(shr_d, sign=True)),
-        ("MaxDD",   _pct(mdd_b),  _pct(mdd_e),  _pct(mdd_d, sign=True)),
-        ("Vol",     _pct(vol_b),  _pct(vol_e),  _pct(vol_d, sign=True)),
-        ("Turnover",
-         _pct(to_b) if has_to else "n/a",
-         _pct(to_e) if has_to else "n/a",
-         _pct(to_d, sign=True) if has_to else "n/a"),
+        ("CAGR", _pct(cagr_b), _pct(cagr_e), _pct(cagr_d, sign=True)),
+        ("Sharpe", _f(shr_b), _f(shr_e), _f(shr_d, sign=True)),
+        ("MaxDD", _pct(mdd_b), _pct(mdd_e), _pct(mdd_d, sign=True)),
+        ("Vol", _pct(vol_b), _pct(vol_e), _pct(vol_d, sign=True)),
+        (
+            "Turnover",
+            _pct(to_b) if has_to else "n/a",
+            _pct(to_e) if has_to else "n/a",
+            _pct(to_d, sign=True) if has_to else "n/a",
+        ),
         ("Sortino", "see note", "see note", "n/a"),
     ]
     for label, b, e, d in rows:
         print(f"   {label:30} {b:>14} {e:>14} {d:>10}")
-    print(f"\n   Note: Sortino not available from segment-level walk-forward output.")
-    print(f"         Sharpe ratio is the primary risk-adjusted metric here.")
+    print("\n   Note: Sortino not available from segment-level walk-forward output.")
+    print("         Sharpe ratio is the primary risk-adjusted metric here.")
 
     # =========================================================================
     print("\n" + "=" * 72)
@@ -400,10 +430,12 @@ def main():
         ("2021-2022", 2021, 2022),
         ("2023-pres", 2023, 2030),
     ]
-    print(f"\n   {'Period':12} {'B CAGR':>8} {'E CAGR':>8} {'Dd':>6} "
-          f"{'B Shr':>7} {'E Shr':>7} {'Ds':>6} "
-          f"{'B MDD':>8} {'E MDD':>8} {'Dm':>7} "
-          f"{'B TO':>7} {'E TO':>7} {'Dt':>7}")
+    print(
+        f"\n   {'Period':12} {'B CAGR':>8} {'E CAGR':>8} {'Dd':>6} "
+        f"{'B Shr':>7} {'E Shr':>7} {'Ds':>6} "
+        f"{'B MDD':>8} {'E MDD':>8} {'Dm':>7} "
+        f"{'B TO':>7} {'E TO':>7} {'Dt':>7}"
+    )
     print("   " + "-" * 100)
     for label, y0, y1 in subperiods:
         sb = _filter_year_range(segs_b, y0, y1)
@@ -411,29 +443,35 @@ def main():
         if len(sb) == 0:
             print(f"   {label:12} {'no OOS data':>8}")
             continue
-        bc = _mean(sb, "Strategy_CAGR");   ec = _mean(se, "Strategy_CAGR")
-        bs = _mean(sb, "Strategy_Sharpe"); es = _mean(se, "Strategy_Sharpe")
-        bm = _mean(sb, "Strategy_MaxDD");  em = _mean(se, "Strategy_MaxDD")
-        bt = _mean(sb, "Strategy_Turnover"); et = _mean(se, "Strategy_Turnover")
+        bc = _mean(sb, "Strategy_CAGR")
+        ec = _mean(se, "Strategy_CAGR")
+        bs = _mean(sb, "Strategy_Sharpe")
+        es = _mean(se, "Strategy_Sharpe")
+        bm = _mean(sb, "Strategy_MaxDD")
+        em = _mean(se, "Strategy_MaxDD")
+        bt = _mean(sb, "Strategy_Turnover")
+        et = _mean(se, "Strategy_Turnover")
         has_sub_to = not (np.isnan(bt) or np.isnan(et))
         n = len(sb)
-        print(f"   {label:12} "
-              f"{_pct(bc):>8} {_pct(ec):>8} {_pct(ec-bc, sign=True):>6} "
-              f"{_f(bs):>7} {_f(es):>7} {_f(es-bs, sign=True):>6} "
-              f"{_pct(bm):>8} {_pct(em):>8} {_pct(em-bm, sign=True):>7} "
-              f"{(_pct(bt) if has_sub_to else 'n/a'):>7} "
-              f"{(_pct(et) if has_sub_to else 'n/a'):>7} "
-              f"{(_pct(et-bt, sign=True) if has_sub_to else 'n/a'):>7} "
-              f"[{n} seg]")
+        print(
+            f"   {label:12} "
+            f"{_pct(bc):>8} {_pct(ec):>8} {_pct(ec - bc, sign=True):>6} "
+            f"{_f(bs):>7} {_f(es):>7} {_f(es - bs, sign=True):>6} "
+            f"{_pct(bm):>8} {_pct(em):>8} {_pct(em - bm, sign=True):>7} "
+            f"{(_pct(bt) if has_sub_to else 'n/a'):>7} "
+            f"{(_pct(et) if has_sub_to else 'n/a'):>7} "
+            f"{(_pct(et - bt, sign=True) if has_sub_to else 'n/a'):>7} "
+            f"[{n} seg]"
+        )
 
     # =========================================================================
     print("\n" + "=" * 72)
     print("3. CRISIS-PERIOD CHECKS")
     print("=" * 72)
     crises = [
-        ("2018 Q4",           2018, 2019, "Q4 equity selloff"),
-        ("2020 COVID",        2020, 2020, "Max drawdown test"),
-        ("2022 rate shock",   2022, 2022, "Bonds + equities both fell"),
+        ("2018 Q4", 2018, 2019, "Q4 equity selloff"),
+        ("2020 COVID", 2020, 2020, "Max drawdown test"),
+        ("2022 rate shock", 2022, 2022, "Bonds + equities both fell"),
     ]
     for label, y0, y1, note in crises:
         sb = _filter_year_range(segs_b, y0, y1)
@@ -442,39 +480,59 @@ def main():
         if len(sb) == 0:
             print(f"     No OOS segments cover {y0}-{y1}.")
             if y0 < 2015:
-                print(f"     Expected: min 60-month training means OOS starts ~2015.")
+                print("     Expected: min 60-month training means OOS starts ~2015.")
             else:
                 print(f"     Check: OOS coverage is {oos_start} to {oos_end}.")
             continue
-        bc = _mean(sb, "Strategy_CAGR");   ec = _mean(se, "Strategy_CAGR")
-        bs = _mean(sb, "Strategy_Sharpe"); es = _mean(se, "Strategy_Sharpe")
-        bm = _mean(sb, "Strategy_MaxDD");  em = _mean(se, "Strategy_MaxDD")
-        bt = _mean(sb, "Strategy_Turnover"); et = _mean(se, "Strategy_Turnover")
+        bc = _mean(sb, "Strategy_CAGR")
+        ec = _mean(se, "Strategy_CAGR")
+        bs = _mean(sb, "Strategy_Sharpe")
+        es = _mean(se, "Strategy_Sharpe")
+        bm = _mean(sb, "Strategy_MaxDD")
+        em = _mean(se, "Strategy_MaxDD")
+        bt = _mean(sb, "Strategy_Turnover")
+        et = _mean(se, "Strategy_Turnover")
         has_sub_to = not (np.isnan(bt) or np.isnan(et))
         print(f"     Segments: {len(sb)}")
-        print(f"     CAGR:    baseline={_pct(bc)}  exp={_pct(ec)}  delta={_pct(ec-bc, sign=True)}")
-        print(f"     Sharpe:  baseline={_f(bs)}   exp={_f(es)}   delta={_f(es-bs, sign=True)}")
-        print(f"     MaxDD:   baseline={_pct(bm)}  exp={_pct(em)}  delta={_pct(em-bm, sign=True)}")
+        print(
+            f"     CAGR:    baseline={_pct(bc)}  exp={_pct(ec)}  delta={_pct(ec - bc, sign=True)}"
+        )
+        print(
+            f"     Sharpe:  baseline={_f(bs)}   exp={_f(es)}   delta={_f(es - bs, sign=True)}"
+        )
+        print(
+            f"     MaxDD:   baseline={_pct(bm)}  exp={_pct(em)}  delta={_pct(em - bm, sign=True)}"
+        )
         if has_sub_to:
-            print(f"     Turnover: baseline={_pct(bt)}  exp={_pct(et)}  delta={_pct(et-bt, sign=True)}")
+            print(
+                f"     Turnover: baseline={_pct(bt)}  exp={_pct(et)}  delta={_pct(et - bt, sign=True)}"
+            )
 
         # Interpretation
         if em < bm - 0.01:
-            print(f"     FLAG: MaxDD worsens by >{abs(em-bm):.1%} -> filter may suppress defensive moves")
+            print(
+                f"     FLAG: MaxDD worsens by >{abs(em - bm):.1%} -> filter may suppress defensive moves"
+            )
         elif em > bm + 0.01:
-            print(f"     GOOD: MaxDD improves by >{abs(em-bm):.1%} -> filter does not hurt crisis navigation")
+            print(
+                f"     GOOD: MaxDD improves by >{abs(em - bm):.1%} -> filter does not hurt crisis navigation"
+            )
         elif es < bs - 0.05:
-            print(f"     CONCERN: Sharpe materially worse ({es-bs:+.3f}) in stress period")
+            print(
+                f"     CONCERN: Sharpe materially worse ({es - bs:+.3f}) in stress period"
+            )
         elif es > bs + 0.05:
-            print(f"     GOOD: Sharpe improves in stress period")
+            print("     GOOD: Sharpe improves in stress period")
         else:
-            print(f"     NEUTRAL: performance approximately flat in this crisis period")
+            print("     NEUTRAL: performance approximately flat in this crisis period")
 
     # =========================================================================
     print("\n" + "=" * 72)
     print("4. TRADE SUPPRESSION DIAGNOSTICS")
     print("=" * 72)
-    print("\n   Reconstructing weight series analytically (same vol-scale pipeline as engine)...")
+    print(
+        "\n   Reconstructing weight series analytically (same vol-scale pipeline as engine)..."
+    )
     print(f"   tau = {TAU:.3f}  |  VOL_LOOKBACK = {VOL_LOOKBACK}  |  lookback = 24M")
 
     try:
@@ -484,99 +542,150 @@ def main():
         stats = _suppression_stats(w_base_me, w_exp_me, all_assets, TAU)
 
         print(f"\n   Total rebalance events:              {stats['n_rebalances']}")
-        print(f"   Rebalances with >= 1 suppressed:     "
-              f"{stats['pct_months_any_suppressed']:.1%}")
-        print(f"   Median suppressed assets / month:    {stats['median_suppressed_per_month']:.1f}")
-        print(f"   Mean suppressed assets / month:      {stats['mean_suppressed_per_month']:.1f}")
+        print(
+            f"   Rebalances with >= 1 suppressed:     "
+            f"{stats['pct_months_any_suppressed']:.1%}"
+        )
+        print(
+            f"   Median suppressed assets / month:    {stats['median_suppressed_per_month']:.1f}"
+        )
+        print(
+            f"   Mean suppressed assets / month:      {stats['mean_suppressed_per_month']:.1f}"
+        )
 
-        print(f"\n   Per-asset suppression frequency (% of rebalances filter acted on asset):")
-        print(f"\n   {'Asset':8} {'Sleeve':9} {'Suppress freq':>14} {'Median |delta|':>15}")
+        print(
+            "\n   Per-asset suppression frequency (% of rebalances filter acted on asset):"
+        )
+        print(
+            f"\n   {'Asset':8} {'Sleeve':9} {'Suppress freq':>14} {'Median |delta|':>15}"
+        )
         print("   " + "-" * 50)
         pa = stats["per_asset"]
-        for a in ["IEF", "GLD", "TLT", "SPY", "MTUM", "VLUE", "QUAL", "USMV", "IJR", "VIG"]:
+        for a in [
+            "IEF",
+            "GLD",
+            "TLT",
+            "SPY",
+            "MTUM",
+            "VLUE",
+            "QUAL",
+            "USMV",
+            "IJR",
+            "VIG",
+        ]:
             if a not in pa:
                 continue
             sleeve = "risk-off" if a in RISK_OFF_ASSETS_BASE else "risk-on"
-            freq   = pa[a]["suppression_freq"]
-            med_d  = pa[a]["median_delta"]
+            freq = pa[a]["suppression_freq"]
+            med_d = pa[a]["median_delta"]
             print(f"   {a:8} {sleeve:9} {freq:>14.1%} {med_d:>15.4f}")
 
         # Summary: risk-on vs risk-off suppression
-        ro_freqs  = [pa[a]["suppression_freq"] for a in RISK_ON_ASSETS_BASE  if a in pa]
+        ro_freqs = [pa[a]["suppression_freq"] for a in RISK_ON_ASSETS_BASE if a in pa]
         rof_freqs = [pa[a]["suppression_freq"] for a in RISK_OFF_ASSETS_BASE if a in pa]
-        avg_ro  = np.mean(ro_freqs)  if ro_freqs  else float("nan")
+        avg_ro = np.mean(ro_freqs) if ro_freqs else float("nan")
         avg_rof = np.mean(rof_freqs) if rof_freqs else float("nan")
-        print(f"\n   Average suppression frequency by sleeve:")
+        print("\n   Average suppression frequency by sleeve:")
         print(f"     Risk-on  sleeve: {avg_ro:.1%}")
         print(f"     Risk-off sleeve: {avg_rof:.1%}")
         if not np.isnan(avg_rof) and not np.isnan(avg_ro):
             if avg_rof > avg_ro + 0.05:
-                print(f"   CONFIRMED: risk-off assets suppressed more frequently (consistent with")
-                print(f"   attribution finding: risk-off drives dominant vol churn)")
+                print(
+                    "   CONFIRMED: risk-off assets suppressed more frequently (consistent with"
+                )
+                print("   attribution finding: risk-off drives dominant vol churn)")
             elif avg_ro > avg_rof + 0.05:
-                print(f"   UNEXPECTED: risk-on assets suppressed more than risk-off.")
-                print(f"   The filter may be disproportionately affecting growth asset trades.")
+                print("   UNEXPECTED: risk-on assets suppressed more than risk-off.")
+                print(
+                    "   The filter may be disproportionately affecting growth asset trades."
+                )
             else:
-                print(f"   SYMMETRIC: filter acts similarly on both sleeves.")
+                print("   SYMMETRIC: filter acts similarly on both sleeves.")
 
         # Check whether crisis-period rebalances were suppressed (risk: delayed defensive shift)
-        print(f"\n   Crisis-period filter activity:")
+        print("\n   Crisis-period filter activity:")
         for label, yr in [("2020", 2020), ("2022", 2022)]:
             crisis_dates = [d for d in w_base_me.index if d.year == yr]
             if not crisis_dates:
-                print(f"     {label}: no rebalance dates in this year in reconstruction window.")
+                print(
+                    f"     {label}: no rebalance dates in this year in reconstruction window."
+                )
                 continue
             crisis_idx = [w_base_me.index.get_loc(d) for d in crisis_dates]
             diffs = (w_exp_me - w_base_me).abs().iloc[crisis_idx]
             any_suppressed = (diffs > 0.0001).any(axis=1).mean()
             ro_vals = ro_me.iloc[crisis_idx]
-            print(f"     {label}: {len(crisis_dates)} rebalances  |  "
-                  f"% with suppression: {any_suppressed:.0%}  |  "
-                  f"mean risk_on: {ro_vals.mean():.3f}  [0=fully defensive, 1=fully risk-on]")
+            print(
+                f"     {label}: {len(crisis_dates)} rebalances  |  "
+                f"% with suppression: {any_suppressed:.0%}  |  "
+                f"mean risk_on: {ro_vals.mean():.3f}  [0=fully defensive, 1=fully risk-on]"
+            )
             if any_suppressed > 0.5:
                 if ro_vals.mean() < 0.4:
-                    print(f"            WARNING: filter is active during risk-off regime in {label}.")
-                    print(f"            Defensive rebalancing may be partially suppressed.")
+                    print(
+                        f"            WARNING: filter is active during risk-off regime in {label}."
+                    )
+                    print(
+                        "            Defensive rebalancing may be partially suppressed."
+                    )
                 else:
-                    print(f"            Filter active but risk_on is moderate/elevated ({ro_vals.mean():.3f})")
-                    print(f"            Suppression unlikely to delay defensive shift significantly.")
+                    print(
+                        f"            Filter active but risk_on is moderate/elevated ({ro_vals.mean():.3f})"
+                    )
+                    print(
+                        "            Suppression unlikely to delay defensive shift significantly."
+                    )
 
     except Exception as exc:
         print(f"\n   Analytical reconstruction failed: {exc}")
-        print(f"   Suppression diagnostics not available. Key metrics from walk-forward only.")
+        print(
+            "   Suppression diagnostics not available. Key metrics from walk-forward only."
+        )
 
     # =========================================================================
     print("\n" + "=" * 72)
     print("5. TURNOVER BENEFIT QUALITY")
     print("=" * 72)
     if has_to:
-        print(f"\n   Full walk-forward turnover comparison:")
+        print("\n   Full walk-forward turnover comparison:")
         print(f"     Baseline (tau=0.000):   {to_b:.2%}")
         print(f"     Experiment (tau=0.015): {to_e:.2%}")
-        print(f"     Absolute reduction:     {-to_d:.2%}  ({-to_d/to_b:.1%} relative)")
+        print(
+            f"     Absolute reduction:     {-to_d:.2%}  ({-to_d / to_b:.1%} relative)"
+        )
         print(f"     Ratio (exp / base):     {to_r:.3f}x")
-        print(f"\n   Fast-mode reference: 71.93% -> 47.43% (-24.50pp, 0.66x)")
-        to_persist = to_d / (-0.2450) if abs(-0.2450) > 0.001 else float("nan")
+        print("\n   Fast-mode reference: 71.93% -> 47.43% (-24.50pp, 0.66x)")
+        to_d / (-0.2450) if abs(-0.2450) > 0.001 else float("nan")
         if has_to and not np.isnan(to_d):
-            print(f"   Full-history vs fast-mode reduction consistency:")
+            print("   Full-history vs fast-mode reduction consistency:")
             print(f"     Fast-mode delta: -24.50pp  |  Full-history delta: {to_d:+.2%}")
             if to_d < 0:
-                print(f"     Turnover reduction persists in full walk-forward: YES")
+                print("     Turnover reduction persists in full walk-forward: YES")
                 if abs(to_d) > 0.15:
-                    print(f"     Magnitude > 15pp: material and robust reduction")
+                    print("     Magnitude > 15pp: material and robust reduction")
                 elif abs(to_d) > 0.05:
-                    print(f"     Magnitude 5-15pp: meaningful but partial")
+                    print("     Magnitude 5-15pp: meaningful but partial")
                 else:
-                    print(f"     Magnitude < 5pp: small in full history despite fast-mode signal")
+                    print(
+                        "     Magnitude < 5pp: small in full history despite fast-mode signal"
+                    )
             else:
-                print(f"     FLAG: turnover increased in full walk-forward despite fast-mode reduction")
+                print(
+                    "     FLAG: turnover increased in full walk-forward despite fast-mode reduction"
+                )
 
         # Regime analysis of turnover
-        print(f"\n   Turnover by subperiod (experiment vs baseline):")
-        print(f"   {'Period':12} {'Base TO':>9} {'Exp TO':>9} {'Delta':>9} {'Ratio':>7}")
+        print("\n   Turnover by subperiod (experiment vs baseline):")
+        print(
+            f"   {'Period':12} {'Base TO':>9} {'Exp TO':>9} {'Delta':>9} {'Ratio':>7}"
+        )
         print("   " + "-" * 52)
-        for label, y0, y1 in [("2013-2017",2013,2017),("2018-2020",2018,2020),
-                               ("2021-2022",2021,2022),("2023-pres",2023,2030)]:
+        for label, y0, y1 in [
+            ("2013-2017", 2013, 2017),
+            ("2018-2020", 2018, 2020),
+            ("2021-2022", 2021, 2022),
+            ("2023-pres", 2023, 2030),
+        ]:
             sb = _filter_year_range(segs_b, y0, y1)
             se = _filter_year_range(segs_e, y0, y1)
             if len(sb) == 0:
@@ -587,7 +696,7 @@ def main():
                 print(f"   {label:12} {'n/a':>9} {'n/a':>9}")
                 continue
             r = et / bt if bt > 0 else float("nan")
-            print(f"   {label:12} {bt:>9.2%} {et:>9.2%} {et-bt:>+9.2%} {r:>7.3f}x")
+            print(f"   {label:12} {bt:>9.2%} {et:>9.2%} {et - bt:>+9.2%} {r:>7.3f}x")
     else:
         print("   Turnover not available in walk-forward output.")
 
@@ -600,7 +709,7 @@ def main():
     perf_approx_flat = abs(shr_d) <= 0.05 and abs(cagr_d) <= 0.005
     perf_materially_worse = shr_d < -0.05 or cagr_d < -0.01
     to_materially_reduced = has_to and to_d < -0.10
-    to_ratio_acceptable   = has_to and to_r < 0.85
+    to_ratio_acceptable = has_to and to_r < 0.85
 
     # Check crisis periods
     crisis_mdd_deltas = []
@@ -614,26 +723,40 @@ def main():
         if not np.isnan(bm) and not np.isnan(em):
             crisis_mdd_deltas.append((label, em - bm))
     crisis_mdd_worsens = any(d < -0.02 for _, d in crisis_mdd_deltas)
-    crisis_mdd_ok      = not crisis_mdd_worsens
+    crisis_mdd_ok = not crisis_mdd_worsens
 
-    print(f"\n   Performance approximately flat (|dSharpe|<=0.05, |dCAGR|<=0.5%)?  "
-          f"{'YES' if perf_approx_flat else 'NO '}"
-          f"  (dSharpe={shr_d:+.3f}, dCAGR={cagr_d:+.2%})")
-    print(f"   Performance materially worse (Sharpe<-0.05 or CAGR<-1%)?          "
-          f"{'YES' if perf_materially_worse else 'NO '}")
-    print(f"   Turnover materially reduced (delta > -10pp)?                       "
-          f"{'YES' if to_materially_reduced else ('NO ' if has_to else 'n/a')}"
-          f"  ({to_d:+.2%})" if has_to else "")
-    print(f"   Turnover ratio acceptable (< 0.85x)?                               "
-          f"{'YES' if to_ratio_acceptable else ('NO ' if has_to else 'n/a')}"
-          f"  ({to_r:.3f}x)" if has_to else "")
+    print(
+        f"\n   Performance approximately flat (|dSharpe|<=0.05, |dCAGR|<=0.5%)?  "
+        f"{'YES' if perf_approx_flat else 'NO '}"
+        f"  (dSharpe={shr_d:+.3f}, dCAGR={cagr_d:+.2%})"
+    )
+    print(
+        f"   Performance materially worse (Sharpe<-0.05 or CAGR<-1%)?          "
+        f"{'YES' if perf_materially_worse else 'NO '}"
+    )
+    print(
+        f"   Turnover materially reduced (delta > -10pp)?                       "
+        f"{'YES' if to_materially_reduced else ('NO ' if has_to else 'n/a')}"
+        f"  ({to_d:+.2%})"
+        if has_to
+        else ""
+    )
+    print(
+        f"   Turnover ratio acceptable (< 0.85x)?                               "
+        f"{'YES' if to_ratio_acceptable else ('NO ' if has_to else 'n/a')}"
+        f"  ({to_r:.3f}x)"
+        if has_to
+        else ""
+    )
     if crisis_mdd_deltas:
-        print(f"   Crisis MaxDD does not materially worsen (none > -2pp)?             "
-              f"{'YES' if crisis_mdd_ok else 'NO -- REJECT'}")
+        print(
+            f"   Crisis MaxDD does not materially worsen (none > -2pp)?             "
+            f"{'YES' if crisis_mdd_ok else 'NO -- REJECT'}"
+        )
         for lbl, d in crisis_mdd_deltas:
             print(f"     {lbl}: dMaxDD={d:+.2%}")
     else:
-        print(f"   Crisis period MaxDD check: insufficient OOS coverage (check above)")
+        print("   Crisis period MaxDD check: insufficient OOS coverage (check above)")
 
     print()
     accept = (
@@ -651,7 +774,9 @@ def main():
             "Consider abandoning tolerance-band approach entirely."
         )
     elif perf_materially_worse:
-        verdict = "REJECT -- performance degrades materially despite turnover reduction."
+        verdict = (
+            "REJECT -- performance degrades materially despite turnover reduction."
+        )
         implication = (
             "The vol-scaling adjustments that are suppressed are load-bearing for returns. "
             "The cost of suppressing these rebalances outweighs the transaction cost savings. "
@@ -660,8 +785,8 @@ def main():
     elif accept:
         verdict = "ACCEPT -- turnover reduced materially with approximately flat performance. Upgrade baseline."
         implication = (
-            f"Adopt tolerance=0.015 as the new execution parameter. "
-            f"Document in PROJECT_CONTEXT.md. Full CAGR/Sharpe/MaxDD/TO metrics above become new baseline."
+            "Adopt tolerance=0.015 as the new execution parameter. "
+            "Document in PROJECT_CONTEXT.md. Full CAGR/Sharpe/MaxDD/TO metrics above become new baseline."
         )
     elif to_materially_reduced and not perf_materially_worse:
         verdict = "CONDITIONAL PASS -- turnover reduced, performance mixed. Consider full-run sensitivity."
@@ -680,18 +805,32 @@ def main():
 
     # Defensive rebalancing check summary
     print("   Crisis responsiveness assessment:")
-    print("   Key question: does tau=1.5% suppress defensive moves to risk-off during market stress?")
+    print(
+        "   Key question: does tau=1.5% suppress defensive moves to risk-off during market stress?"
+    )
     if crisis_mdd_deltas:
         if crisis_mdd_worsens:
-            print("   ANSWER: YES -- MaxDD worsens in crisis periods. Reject on this basis.")
+            print(
+                "   ANSWER: YES -- MaxDD worsens in crisis periods. Reject on this basis."
+            )
         else:
-            print("   ANSWER: NO -- crisis-period MaxDD is not materially affected by filter.")
-            print("   The 63-day vol window generates large enough weight changes during crises")
+            print(
+                "   ANSWER: NO -- crisis-period MaxDD is not materially affected by filter."
+            )
+            print(
+                "   The 63-day vol window generates large enough weight changes during crises"
+            )
             print("   that most defensive rebalances clear the 1.5% threshold.")
     else:
-        print("   ANSWER: Cannot confirm -- OOS coverage is insufficient to check 2020/2022.")
-        print("   Walk-forward requires more history or shorter min_train to reach these years.")
-        print("   Recommend checking subperiod results above for any available 2020/2022 segments.")
+        print(
+            "   ANSWER: Cannot confirm -- OOS coverage is insufficient to check 2020/2022."
+        )
+        print(
+            "   Walk-forward requires more history or shorter min_train to reach these years."
+        )
+        print(
+            "   Recommend checking subperiod results above for any available 2020/2022 segments."
+        )
 
     print("\n" + "=" * 72)
 

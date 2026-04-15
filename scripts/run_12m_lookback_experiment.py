@@ -23,27 +23,27 @@ logging.basicConfig(level=logging.WARNING)
 FAST_START = "2018-01-01"
 FAST_END = "2024-12-31"
 
-SHARED_KWARGS = dict(
-    start=FAST_START,
-    end=FAST_END,
-    min_train_months=60,
-    test_months=12,
-    expanding=True,
-    use_stagflation_override=False,
-    use_stagflation_risk_on_cap=False,
-    use_regime_smoothing=False,
-    use_hybrid_signal=True,
-    hybrid_macro_weight=0.0,
-    use_momentum=True,
-    trend_filter_type="none",
-    vol_scaling_method="none",
-    portfolio_construction_method="equal_weight",
-    momentum_12m_weight=0.0,
-    quarterly_rebalance=False,
-    fast_mode=True,
-    skip_persist=True,
-    use_vol_regime=False,
-)
+SHARED_KWARGS = {
+    "start": FAST_START,
+    "end": FAST_END,
+    "min_train_months": 60,
+    "test_months": 12,
+    "expanding": True,
+    "use_stagflation_override": False,
+    "use_stagflation_risk_on_cap": False,
+    "use_regime_smoothing": False,
+    "use_hybrid_signal": True,
+    "hybrid_macro_weight": 0.0,
+    "use_momentum": True,
+    "trend_filter_type": "none",
+    "vol_scaling_method": "none",
+    "portfolio_construction_method": "equal_weight",
+    "momentum_12m_weight": 0.0,
+    "quarterly_rebalance": False,
+    "fast_mode": True,
+    "skip_persist": True,
+    "use_vol_regime": False,
+}
 
 
 def _compute_risk_on(spy_monthly: pd.Series, lookback: int) -> tuple:
@@ -66,7 +66,7 @@ def _compute_risk_on(spy_monthly: pd.Series, lookback: int) -> tuple:
     min_history = max(lookback, 12)
     z = raw_s.copy()
     for i in range(n):
-        trailing = raw_s.iloc[:i + 1].dropna()
+        trailing = raw_s.iloc[: i + 1].dropna()
         if len(trailing) >= min_history:
             z.iloc[i] = (raw_s.iloc[i] - trailing.mean()) / trailing.std()
         else:
@@ -119,7 +119,7 @@ def main():
     print("-" * 40)
     print(f"  First valid risk_on date (24M): {_first_valid(ro_24)}")
     print(f"  First valid risk_on date (12M): {_first_valid(ro_12)}")
-    print(f"  Parameter diff: ONLY market_lookback_months (24 vs 12)")
+    print("  Parameter diff: ONLY market_lookback_months (24 vs 12)")
 
     # -- Run baseline ---------------------------------------------------------
     print("\nRunning BASELINE (market_lookback_months=24)...")
@@ -134,8 +134,12 @@ def main():
         sys.exit(1)
 
     # Verify identical OOS segments
-    segs_b = df_base[df_base["segment"] != "OVERALL"][["test_start", "test_end"]].reset_index(drop=True)
-    segs_e = df_exp[df_exp["segment"] != "OVERALL"][["test_start", "test_end"]].reset_index(drop=True)
+    segs_b = df_base[df_base["segment"] != "OVERALL"][
+        ["test_start", "test_end"]
+    ].reset_index(drop=True)
+    segs_e = df_exp[df_exp["segment"] != "OVERALL"][
+        ["test_start", "test_end"]
+    ].reset_index(drop=True)
     seg_match = segs_b.equals(segs_e)
     print(f"\nOOS segments identical: {'YES' if seg_match else 'NO -- STOP'}")
     if not seg_match:
@@ -146,24 +150,24 @@ def main():
     b = _overall(df_base)
     e = _overall(df_exp)
 
-    cagr_b   = b["Strategy_CAGR"]
-    cagr_e   = e["Strategy_CAGR"]
+    cagr_b = b["Strategy_CAGR"]
+    cagr_e = e["Strategy_CAGR"]
     sharpe_b = b["Strategy_Sharpe"]
     sharpe_e = e["Strategy_Sharpe"]
-    maxdd_b  = b["Strategy_MaxDD"]
-    maxdd_e  = e["Strategy_MaxDD"]
-    vol_b    = b["Strategy_Vol"]
-    vol_e    = e["Strategy_Vol"]
-    to_col   = "Strategy_Turnover"
-    has_to   = (to_col in b.index and not np.isnan(b[to_col]))
-    to_b     = b[to_col] if has_to else float("nan")
-    to_e     = e[to_col] if has_to else float("nan")
+    maxdd_b = b["Strategy_MaxDD"]
+    maxdd_e = e["Strategy_MaxDD"]
+    vol_b = b["Strategy_Vol"]
+    vol_e = e["Strategy_Vol"]
+    to_col = "Strategy_Turnover"
+    has_to = to_col in b.index and not np.isnan(b[to_col])
+    to_b = b[to_col] if has_to else float("nan")
+    to_e = e[to_col] if has_to else float("nan")
 
-    cagr_d   = cagr_e   - cagr_b
+    cagr_d = cagr_e - cagr_b
     sharpe_d = sharpe_e - sharpe_b
-    maxdd_d  = maxdd_e  - maxdd_b
-    vol_d    = vol_e    - vol_b
-    to_d     = to_e - to_b if has_to else float("nan")
+    maxdd_d = maxdd_e - maxdd_b
+    vol_d = vol_e - vol_b
+    to_d = to_e - to_b if has_to else float("nan")
     to_ratio = to_e / to_b if (has_to and to_b > 0) else float("nan")
 
     # =========================================================================
@@ -186,21 +190,29 @@ def main():
     print("2. KILL SWITCH EVALUATION")
     print("=" * 70)
     ks_sharpe = sharpe_d < 0.02
-    ks_cagr   = cagr_d < 0.0025
+    ks_cagr = cagr_d < 0.0025
 
     ds_b = _difficult_sharpe(df_base)
     ds_e = _difficult_sharpe(df_exp)
-    difficult_improved = (not np.isnan(ds_e) and not np.isnan(ds_b) and ds_e > ds_b)
+    difficult_improved = not np.isnan(ds_e) and not np.isnan(ds_b) and ds_e > ds_b
     ks_no_diff = not difficult_improved
     kill = ks_sharpe and ks_cagr and ks_no_diff
 
-    print(f"  Sharpe delta < +0.02?         {'YES' if ks_sharpe else 'NO ':3}  (delta = {sharpe_d:+.3f})")
-    print(f"  CAGR delta < +0.25%?          {'YES' if ks_cagr else 'NO ':3}  (delta = {cagr_d:+.2%})")
+    print(
+        f"  Sharpe delta < +0.02?         {'YES' if ks_sharpe else 'NO ':3}  (delta = {sharpe_d:+.3f})"
+    )
+    print(
+        f"  CAGR delta < +0.25%?          {'YES' if ks_cagr else 'NO ':3}  (delta = {cagr_d:+.2%})"
+    )
     diff_b_str = f"{ds_b:.3f}" if not np.isnan(ds_b) else "n/a"
     diff_e_str = f"{ds_e:.3f}" if not np.isnan(ds_e) else "n/a"
-    print(f"  No difficult-period impr.?    {'YES' if ks_no_diff else 'NO ':3}  "
-          f"(baseline = {diff_b_str}, exp = {diff_e_str})")
-    print(f"  Kill switch fires?            {'YES -> REJECT' if kill else 'NO -> continue'}")
+    print(
+        f"  No difficult-period impr.?    {'YES' if ks_no_diff else 'NO ':3}  "
+        f"(baseline = {diff_b_str}, exp = {diff_e_str})"
+    )
+    print(
+        f"  Kill switch fires?            {'YES -> REJECT' if kill else 'NO -> continue'}"
+    )
 
     # =========================================================================
     print("\n" + "=" * 70)
@@ -209,7 +221,7 @@ def main():
 
     def _zero_crossings(raw: pd.Series) -> dict:
         clean = raw.dropna()
-        sign  = np.sign(clean)
+        sign = np.sign(clean)
         cross = (sign != sign.shift(1)).astype(int)
         cross.iloc[0] = 0
         return cross.groupby(cross.index.year).sum().to_dict()
@@ -244,11 +256,17 @@ def main():
     print(f"  {'Std risk_on':35} {r24c.std():>14.3f} {r12c.std():>14.3f}")
     print(f"  {'Min risk_on':35} {r24c.min():>14.3f} {r12c.min():>14.3f}")
     print(f"  {'Max risk_on':35} {r24c.max():>14.3f} {r12c.max():>14.3f}")
-    print(f"  {'% months risk_on < 0.40':35} {(r24c < 0.40).mean():>14.1%} {(r12c < 0.40).mean():>14.1%}")
-    print(f"  {'% months risk_on > 0.60':35} {(r24c > 0.60).mean():>14.1%} {(r12c > 0.60).mean():>14.1%}")
-    print(f"  {'% months risk_on in [0.45,0.55]':35} "
-          f"{((r24c >= 0.45) & (r24c <= 0.55)).mean():>14.1%} "
-          f"{((r12c >= 0.45) & (r12c <= 0.55)).mean():>14.1%}")
+    print(
+        f"  {'% months risk_on < 0.40':35} {(r24c < 0.40).mean():>14.1%} {(r12c < 0.40).mean():>14.1%}"
+    )
+    print(
+        f"  {'% months risk_on > 0.60':35} {(r24c > 0.60).mean():>14.1%} {(r12c > 0.60).mean():>14.1%}"
+    )
+    print(
+        f"  {'% months risk_on in [0.45,0.55]':35} "
+        f"{((r24c >= 0.45) & (r24c <= 0.55)).mean():>14.1%} "
+        f"{((r12c >= 0.45) & (r12c <= 0.55)).mean():>14.1%}"
+    )
 
     # =========================================================================
     print("\n" + "=" * 70)
@@ -257,13 +275,28 @@ def main():
 
     crash_blocks = {
         "2020 COVID drawdown (peak Feb 19, trough Mar 23)": [
-            "2019-12", "2020-01", "2020-02", "2020-03", "2020-04", "2020-05",
+            "2019-12",
+            "2020-01",
+            "2020-02",
+            "2020-03",
+            "2020-04",
+            "2020-05",
         ],
         "2022 rate shock (SPY -20% Jan-Oct)": [
-            "2021-12", "2022-01", "2022-03", "2022-06", "2022-09", "2022-10", "2022-12",
+            "2021-12",
+            "2022-01",
+            "2022-03",
+            "2022-06",
+            "2022-09",
+            "2022-10",
+            "2022-12",
         ],
         "2023 Oct-Nov signal event": [
-            "2023-09", "2023-10", "2023-11", "2023-12", "2024-01",
+            "2023-09",
+            "2023-10",
+            "2023-11",
+            "2023-12",
+            "2024-01",
         ],
     }
 
@@ -278,10 +311,10 @@ def main():
         for m in months:
             r24v = _get(ro_24, m)
             r12v = _get(ro_12, m)
-            dv   = r12v - r24v if not (np.isnan(r24v) or np.isnan(r12v)) else float("nan")
+            dv = r12v - r24v if not (np.isnan(r24v) or np.isnan(r12v)) else float("nan")
             r24s = f"{r24v:.3f}" if not np.isnan(r24v) else "n/a"
             r12s = f"{r12v:.3f}" if not np.isnan(r12v) else "n/a"
-            ds   = f"{dv:+.3f}" if not np.isnan(dv) else "n/a"
+            ds = f"{dv:+.3f}" if not np.isnan(dv) else "n/a"
             print(f"  {m:10} {r24s:>12} {r12s:>12} {ds:>10}")
 
     # =========================================================================
@@ -289,21 +322,27 @@ def main():
     print("6. DIVERGENCE PERIODS (|risk_on_12M - risk_on_24M| > 0.05)")
     print("=" * 70)
     common = ro_24.index.intersection(ro_12.index)
-    diff   = (ro_12.reindex(common) - ro_24.reindex(common)).abs()
+    diff = (ro_12.reindex(common) - ro_24.reindex(common)).abs()
     diverg = diff[diff > 0.05]
 
     if len(diverg) > 0:
         spy_ret = spy_monthly.pct_change()
-        print(f"  {'Month':10} {'24M risk_on':>12} {'12M risk_on':>12} {'|Delta|':>10} {'SPY ret':>10}")
+        print(
+            f"  {'Month':10} {'24M risk_on':>12} {'12M risk_on':>12} {'|Delta|':>10} {'SPY ret':>10}"
+        )
         print("  " + "-" * 58)
         for dt, dv in diverg.items():
             r24v = ro_24.loc[dt]
             r12v = ro_12.loc[dt]
-            sr   = spy_ret.get(dt, float("nan"))
-            srs  = f"{sr:+.1%}" if not np.isnan(sr) else "n/a"
-            print(f"  {dt.strftime('%Y-%m'):10} {r24v:>12.3f} {r12v:>12.3f} {dv:>10.3f} {srs:>10}")
+            sr = spy_ret.get(dt, float("nan"))
+            srs = f"{sr:+.1%}" if not np.isnan(sr) else "n/a"
+            print(
+                f"  {dt.strftime('%Y-%m'):10} {r24v:>12.3f} {r12v:>12.3f} {dv:>10.3f} {srs:>10}"
+            )
         print(f"\n  Total divergent months: {len(diverg)}")
-        print(f"  Max divergence:         {diff.max():.3f} ({diff.idxmax().strftime('%Y-%m')})")
+        print(
+            f"  Max divergence:         {diff.max():.3f} ({diff.idxmax().strftime('%Y-%m')})"
+        )
     else:
         print("  No months with |delta| > 0.05. Models tracked closely.")
 
@@ -326,22 +365,30 @@ def main():
     print("\n" + "=" * 70)
     print("8. ESCALATION DECISION")
     print("=" * 70)
-    high_churn = (not np.isnan(to_ratio) and to_ratio > 1.5)
-    also_high_churn = (tot_24 > 0 and tot_12 > 1.5 * tot_24)
+    high_churn = not np.isnan(to_ratio) and to_ratio > 1.5
+    also_high_churn = tot_24 > 0 and tot_12 > 1.5 * tot_24
     sharpe_thresh = 0.04 if (high_churn or also_high_churn) else 0.02
 
     esc_sharpe = sharpe_d >= sharpe_thresh
-    esc_cagr   = cagr_d >= 0.0025
-    esc_maxdd  = maxdd_d > 0.01
-    esc_diff   = difficult_improved
-    escalate   = esc_sharpe or esc_cagr or esc_maxdd or esc_diff
+    esc_cagr = cagr_d >= 0.0025
+    esc_maxdd = maxdd_d > 0.01
+    esc_diff = difficult_improved
+    escalate = esc_sharpe or esc_cagr or esc_maxdd or esc_diff
 
     thr_note = "(raised: high churn)" if sharpe_thresh == 0.04 else ""
-    print(f"  High churn flag active?          {'YES' if (high_churn or also_high_churn) else 'NO'}")
+    print(
+        f"  High churn flag active?          {'YES' if (high_churn or also_high_churn) else 'NO'}"
+    )
     print(f"  Sharpe threshold:                {sharpe_thresh:+.2f} {thr_note}")
-    print(f"  Sharpe delta >= threshold?       {'YES' if esc_sharpe else 'NO '}  ({sharpe_d:+.3f})")
-    print(f"  CAGR improves >= +0.25%?         {'YES' if esc_cagr else 'NO '}  ({cagr_d:+.2%})")
-    print(f"  MaxDD improves > +1%?            {'YES' if esc_maxdd else 'NO '}  ({maxdd_d:+.2%})")
+    print(
+        f"  Sharpe delta >= threshold?       {'YES' if esc_sharpe else 'NO '}  ({sharpe_d:+.3f})"
+    )
+    print(
+        f"  CAGR improves >= +0.25%?         {'YES' if esc_cagr else 'NO '}  ({cagr_d:+.2%})"
+    )
+    print(
+        f"  MaxDD improves > +1%?            {'YES' if esc_maxdd else 'NO '}  ({maxdd_d:+.2%})"
+    )
     print(f"  Difficult-period improvement?    {'YES' if esc_diff else 'NO '}")
     print()
 
@@ -350,7 +397,9 @@ def main():
     elif escalate:
         verdict = "FAST-MODE VERDICT: PASS -- escalate to full walk-forward validation"
     else:
-        verdict = "FAST-MODE VERDICT: INSUFFICIENT -- does not meet escalation thresholds"
+        verdict = (
+            "FAST-MODE VERDICT: INSUFFICIENT -- does not meet escalation thresholds"
+        )
 
     print(f"  {verdict}")
     print("=" * 70)

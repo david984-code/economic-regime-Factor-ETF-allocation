@@ -8,9 +8,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
 import pandas as pd
 
+from src.allocation.optimizer import optimize_allocations_from_data
 from src.config import OUTPUTS_DIR, START_DATE, TICKERS, get_end_date
 from src.data.market_ingestion import fetch_prices
-from src.allocation.optimizer import optimize_allocations_from_data
 
 CASH_MONTHLY = (1.05) ** (1 / 12) - 1
 
@@ -28,7 +28,12 @@ def _forward_returns(ret: pd.DataFrame, horizon: int) -> pd.DataFrame:
     """Compute forward N-month total return for each asset."""
     out = ret.copy()
     for c in ret.columns:
-        out[c] = (1 + ret[c]).rolling(horizon).apply(lambda x: x.prod() - 1, raw=True).shift(-horizon)
+        out[c] = (
+            (1 + ret[c])
+            .rolling(horizon)
+            .apply(lambda x: x.prod() - 1, raw=True)
+            .shift(-horizon)
+        )
     return out
 
 
@@ -38,7 +43,9 @@ def main() -> None:
     ret = _monthly_returns(prices[TICKERS])
     ret["cash"] = CASH_MONTHLY
 
-    regimes = pd.read_csv(OUTPUTS_DIR / "regime_labels_expanded.csv", parse_dates=["date"])
+    regimes = pd.read_csv(
+        OUTPUTS_DIR / "regime_labels_expanded.csv", parse_dates=["date"]
+    )
     regimes = regimes.dropna(subset=["regime"])
     regimes = regimes[regimes["regime"].str.strip() != ""]
     regimes = regimes.set_index("date")
@@ -54,7 +61,7 @@ def main() -> None:
     regime_series = regime_series.astype(str).str.strip()
 
     # Exclude Unknown for most analysis
-    known = regime_series[regime_series != "Unknown"]
+    regime_series[regime_series != "Unknown"]
     reg_names = ["Recovery", "Overheating", "Stagflation", "Contraction"]
 
     # 1. Forward returns by regime
@@ -73,7 +80,12 @@ def main() -> None:
         uncond_1 = fwd1[asset].dropna().mean()
         uncond_3 = fwd3[asset].dropna().mean()
         uncond_6 = fwd6[asset].dropna().mean()
-        row = {"asset": asset, "uncond_1M": uncond_1, "uncond_3M": uncond_3, "uncond_6M": uncond_6}
+        row = {
+            "asset": asset,
+            "uncond_1M": uncond_1,
+            "uncond_3M": uncond_3,
+            "uncond_6M": uncond_6,
+        }
         for r in reg_names:
             mask = regime_series == r
             if mask.sum() < 6:
@@ -88,8 +100,14 @@ def main() -> None:
 
     fwd_df = pd.DataFrame(rows)
     print("\n1M forward return (annualized approx):")
-    cols = ["asset", "uncond_1M"] + [f"{r}_1M" for r in reg_names if f"{r}_1M" in fwd_df.columns]
-    print(fwd_df[[c for c in cols if c in fwd_df.columns]].to_string(index=False, float_format=lambda x: f"{x:.2%}" if pd.notna(x) else "N/A"))
+    cols = ["asset", "uncond_1M"] + [
+        f"{r}_1M" for r in reg_names if f"{r}_1M" in fwd_df.columns
+    ]
+    print(
+        fwd_df[[c for c in cols if c in fwd_df.columns]].to_string(
+            index=False, float_format=lambda x: f"{x:.2%}" if pd.notna(x) else "N/A"
+        )
+    )
 
     # 2. Regime persistence
     print("\n" + "=" * 80)
@@ -97,7 +115,6 @@ def main() -> None:
     print("=" * 80)
 
     reg_arr = regime_series.values
-    months = regime_series.index
     durations = []
     current_reg = reg_arr[0]
     current_len = 1
@@ -112,7 +129,9 @@ def main() -> None:
 
     dur_df = pd.DataFrame(durations, columns=["regime", "months"])
     print("\nAverage duration (months) by regime:")
-    print(dur_df.groupby("regime")["months"].agg(["mean", "median", "count"]).to_string())
+    print(
+        dur_df.groupby("regime")["months"].agg(["mean", "median", "count"]).to_string()
+    )
 
     # Transition matrix
     trans = pd.crosstab(regime_series.shift(1), regime_series, normalize="index")
@@ -126,7 +145,9 @@ def main() -> None:
         window = reg_arr[i : i + test_months]
         changes = (window[1:] != window[:-1]).sum()
         n_changes.append(changes)
-    print(f"\nRegime changes within 12-month windows: mean={np.mean(n_changes):.1f}, median={np.median(n_changes):.0f}")
+    print(
+        f"\nRegime changes within 12-month windows: mean={np.mean(n_changes):.1f}, median={np.median(n_changes):.0f}"
+    )
 
     # 3. Simple regime portfolios
     print("\n" + "=" * 80)
@@ -151,7 +172,9 @@ def main() -> None:
             continue
         sub_fwd = fwd1.loc[mask, [c for c in TICKERS if c in fwd1.columns]]
         means = sub_fwd.mean()
-        best_asset[r] = means.idxmax() if len(means) > 0 and means.notna().any() else "N/A"
+        best_asset[r] = (
+            means.idxmax() if len(means) > 0 and means.notna().any() else "N/A"
+        )
 
     # Load optimizer allocations
     allocs = {}
@@ -164,7 +187,9 @@ def main() -> None:
     if not allocs and (OUTPUTS_DIR / "optimal_allocations.csv").exists():
         opt_df = pd.read_csv(OUTPUTS_DIR / "optimal_allocations.csv", index_col=0)
         allocs = {r: opt_df.loc[r].to_dict() for r in opt_df.index if r in reg_names}
-    opt_alloc = pd.read_csv(OUTPUTS_DIR / "optimal_allocations.csv", index_col=0) if (OUTPUTS_DIR / "optimal_allocations.csv").exists() else None
+    pd.read_csv(OUTPUTS_DIR / "optimal_allocations.csv", index_col=0) if (
+        OUTPUTS_DIR / "optimal_allocations.csv"
+    ).exists() else None
 
     print("\nBest single asset per regime (forward 1M return):")
     for r, a in best_asset.items():
@@ -190,18 +215,23 @@ def main() -> None:
         for i, (idx, reg) in enumerate(regime_series.items()):
             if reg in allocs:
                 w = allocs[reg]
-                opt_port.iloc[i] = sum(ret.loc[idx, a] * w.get(a, 0) for a in ret.columns if a in w)
+                opt_port.iloc[i] = sum(
+                    ret.loc[idx, a] * w.get(a, 0) for a in ret.columns if a in w
+                )
             else:
                 opt_port.iloc[i] = eqw_port.loc[idx]
 
     from src.backtest.metrics import compute_metrics
+
     rf = CASH_MONTHLY
     rf_daily = (1 + rf) ** (1 / 21) - 1
+
     def _monthly_to_daily(ser: pd.Series) -> pd.Series:
         out = []
         for r in ser.dropna():
             out.extend([(1 + r) ** (1 / 21) - 1] * 21)
         return pd.Series(out)
+
     eqw_daily = _monthly_to_daily(eqw_port)
     best_daily = _monthly_to_daily(best_asset_port)
     opt_daily = _monthly_to_daily(opt_port) if allocs else pd.Series(dtype=float)
@@ -209,10 +239,16 @@ def main() -> None:
     m_best = compute_metrics(best_daily, rf_daily=rf_daily)
     m_opt = compute_metrics(opt_daily, rf_daily=rf_daily) if len(opt_daily) > 0 else {}
     print("\nSimple regime portfolio performance (monthly, annualized):")
-    print(f"  Equal-weight (unconditional): CAGR={m_eqw['CAGR']:.2%}, Sharpe={m_eqw['Sharpe']:.2f}")
-    print(f"  Best-asset-per-regime:        CAGR={m_best['CAGR']:.2%}, Sharpe={m_best['Sharpe']:.2f}")
+    print(
+        f"  Equal-weight (unconditional): CAGR={m_eqw['CAGR']:.2%}, Sharpe={m_eqw['Sharpe']:.2f}"
+    )
+    print(
+        f"  Best-asset-per-regime:        CAGR={m_best['CAGR']:.2%}, Sharpe={m_best['Sharpe']:.2f}"
+    )
     if m_opt:
-        print(f"  Optimizer allocation:         CAGR={m_opt['CAGR']:.2%}, Sharpe={m_opt['Sharpe']:.2f}")
+        print(
+            f"  Optimizer allocation:         CAGR={m_opt['CAGR']:.2%}, Sharpe={m_opt['Sharpe']:.2f}"
+        )
 
     # 4. Regime signal strength
     print("\n" + "=" * 80)
@@ -224,12 +260,22 @@ def main() -> None:
     for asset in TICKERS:
         if asset not in ret.columns:
             continue
-        by_reg = [ret.loc[regime_series == r, asset].mean() for r in reg_names if (regime_series == r).sum() >= 6]
+        by_reg = [
+            ret.loc[regime_series == r, asset].mean()
+            for r in reg_names
+            if (regime_series == r).sum() >= 6
+        ]
         if len(by_reg) >= 2:
             disp.append((asset, np.std(by_reg), np.max(by_reg) - np.min(by_reg)))
     disp_df = pd.DataFrame(disp, columns=["asset", "std_across_regimes", "range"])
-    print("\nDispersion of mean return across regimes (higher = regime differentiates more):")
-    print(disp_df.sort_values("std_across_regimes", ascending=False).to_string(index=False))
+    print(
+        "\nDispersion of mean return across regimes (higher = regime differentiates more):"
+    )
+    print(
+        disp_df.sort_values("std_across_regimes", ascending=False).to_string(
+            index=False
+        )
+    )
 
     # Information ratio: regime-conditioned vs unconditional
     # Simplified: compare volatility of regime-specific mean returns
@@ -246,13 +292,22 @@ def main() -> None:
         sub = ret.loc[mask, TICKERS].mean(axis=1)
         regime_cond_ret.append(sub.mean())
     if regime_cond_ret:
-        reg_avg = np.mean(regime_cond_ret)
-        reg_std = np.std(regime_cond_ret)
-        print(f"Avg monthly return by regime (when in that regime): mean={np.mean(regime_cond_ret):.2%}, std={np.std(regime_cond_ret):.2%}")
+        np.mean(regime_cond_ret)
+        np.std(regime_cond_ret)
+        print(
+            f"Avg monthly return by regime (when in that regime): mean={np.mean(regime_cond_ret):.2%}, std={np.std(regime_cond_ret):.2%}"
+        )
 
     # 5. Write report
     _write_report(
-        fwd_df, dur_df, trans, n_changes, best_asset, allocs, disp_df, reg_names,
+        fwd_df,
+        dur_df,
+        trans,
+        n_changes,
+        best_asset,
+        allocs,
+        disp_df,
+        reg_names,
         {"eqw": m_eqw, "best": m_best, "opt": m_opt},
     )
 
@@ -281,14 +336,26 @@ def _write_report(
         "Average forward return when regime is known at start of period. Uncond = unconditional.",
         "",
     ]
-    cols = ["asset", "uncond_1M"] + [f"{r}_1M" for r in reg_names if f"{r}_1M" in fwd_df.columns]
+    cols = ["asset", "uncond_1M"] + [
+        f"{r}_1M" for r in reg_names if f"{r}_1M" in fwd_df.columns
+    ]
     tbl = fwd_df[[c for c in cols if c in fwd_df.columns]].head(12)
-    lines.append(tbl.to_string(index=False, float_format=lambda x: f"{x:.2%}" if pd.notna(x) else "N/A"))
+    lines.append(
+        tbl.to_string(
+            index=False, float_format=lambda x: f"{x:.2%}" if pd.notna(x) else "N/A"
+        )
+    )
     lines.append("")
     lines.append("3M forward return:")
-    cols3 = ["asset", "uncond_3M"] + [f"{r}_3M" for r in reg_names if f"{r}_3M" in fwd_df.columns]
+    cols3 = ["asset", "uncond_3M"] + [
+        f"{r}_3M" for r in reg_names if f"{r}_3M" in fwd_df.columns
+    ]
     tbl3 = fwd_df[[c for c in cols3 if c in fwd_df.columns]].head(12)
-    lines.append(tbl3.to_string(index=False, float_format=lambda x: f"{x:.2%}" if pd.notna(x) else "N/A"))
+    lines.append(
+        tbl3.to_string(
+            index=False, float_format=lambda x: f"{x:.2%}" if pd.notna(x) else "N/A"
+        )
+    )
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -296,13 +363,17 @@ def _write_report(
     lines.append("")
     lines.append("### Average duration (months)")
     lines.append("")
-    lines.append(dur_df.groupby("regime")["months"].agg(["mean", "median", "count"]).to_string())
+    lines.append(
+        dur_df.groupby("regime")["months"].agg(["mean", "median", "count"]).to_string()
+    )
     lines.append("")
     lines.append("### Transition probabilities (row=from, col=to)")
     lines.append("")
     lines.append(trans.round(3).to_string())
     lines.append("")
-    lines.append(f"### Regime changes within 12-month test windows: mean={np.mean(n_changes):.1f}")
+    lines.append(
+        f"### Regime changes within 12-month test windows: mean={np.mean(n_changes):.1f}"
+    )
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -314,19 +385,29 @@ def _write_report(
         lines.append(f"- {r}: {a}")
     if port_metrics:
         lines.append("")
-        lines.append("### Simple regime portfolio performance (in-sample, perfect regime knowledge)")
+        lines.append(
+            "### Simple regime portfolio performance (in-sample, perfect regime knowledge)"
+        )
         lines.append("")
         lines.append("| Portfolio | CAGR | Sharpe |")
         lines.append("|-----------|------|--------|")
         m = port_metrics.get("eqw", {})
-        lines.append(f"| Equal-weight (unconditional) | {m.get('CAGR', 0):.2%} | {m.get('Sharpe', 0):.2f} |")
+        lines.append(
+            f"| Equal-weight (unconditional) | {m.get('CAGR', 0):.2%} | {m.get('Sharpe', 0):.2f} |"
+        )
         m = port_metrics.get("best", {})
-        lines.append(f"| Best-asset-per-regime | {m.get('CAGR', 0):.2%} | {m.get('Sharpe', 0):.2f} |")
+        lines.append(
+            f"| Best-asset-per-regime | {m.get('CAGR', 0):.2%} | {m.get('Sharpe', 0):.2f} |"
+        )
         m = port_metrics.get("opt", {})
         if m:
-            lines.append(f"| Optimizer allocation (in-sample) | {m.get('CAGR', 0):.2%} | {m.get('Sharpe', 0):.2f} |")
+            lines.append(
+                f"| Optimizer allocation (in-sample) | {m.get('CAGR', 0):.2%} | {m.get('Sharpe', 0):.2f} |"
+            )
         lines.append("")
-        lines.append("*Optimizer is in-sample (perfect foresight). Walk-forward shows ~8% CAGR out-of-sample.*")
+        lines.append(
+            "*Optimizer is in-sample (perfect foresight). Walk-forward shows ~8% CAGR out-of-sample.*"
+        )
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -334,15 +415,23 @@ def _write_report(
     lines.append("")
     lines.append("Higher dispersion = regimes differentiate asset behavior more.")
     lines.append("")
-    lines.append(disp_df.sort_values("std_across_regimes", ascending=False).head(10).to_string(index=False))
+    lines.append(
+        disp_df.sort_values("std_across_regimes", ascending=False)
+        .head(10)
+        .to_string(index=False)
+    )
     lines.append("")
     lines.append("---")
     lines.append("")
     lines.append("## 5. Conclusion")
     lines.append("")
-    avg_dur = dur_df[dur_df["regime"] != "Unknown"].groupby("regime")["months"].mean().mean()
+    avg_dur = (
+        dur_df[dur_df["regime"] != "Unknown"].groupby("regime")["months"].mean().mean()
+    )
     max_disp = disp_df["std_across_regimes"].max() if len(disp_df) > 0 else 0
-    best_beats_eqw = port_metrics and port_metrics.get("best", {}).get("CAGR", 0) > port_metrics.get("eqw", {}).get("CAGR", 1)
+    best_beats_eqw = port_metrics and port_metrics.get("best", {}).get(
+        "CAGR", 0
+    ) > port_metrics.get("eqw", {}).get("CAGR", 1)
     if avg_dur < 4 and (np.mean(n_changes) if n_changes else 0) > 3:
         concl = "Regimes are **short-lived** (avg duration < 4 months) and **change frequently** within test windows (mean 7.6 changes per 12 months). The signal may be too noisy for 12-month allocation decisions."
     elif not best_beats_eqw and port_metrics:
@@ -359,9 +448,15 @@ def _write_report(
     lines.append("")
     lines.append("| Option | Rationale |")
     lines.append("|--------|-----------|")
-    lines.append("| **Test longer regime smoothing** | If regimes are noisy, smooth over 2-3 months before allocation. |")
-    lines.append("| **Reduce regime dependence** | Use regime as one input to risk_on, not as allocation switch. |")
-    lines.append("| **Validate macro lag** | Compare regime dates to NBER recession dates; check if macro lags. |")
+    lines.append(
+        "| **Test longer regime smoothing** | If regimes are noisy, smooth over 2-3 months before allocation. |"
+    )
+    lines.append(
+        "| **Reduce regime dependence** | Use regime as one input to risk_on, not as allocation switch. |"
+    )
+    lines.append(
+        "| **Validate macro lag** | Compare regime dates to NBER recession dates; check if macro lags. |"
+    )
     lines.append("")
     lines.append("---")
     lines.append("")

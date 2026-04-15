@@ -1,6 +1,5 @@
 """Macro feature engineering: resample, z-scores, macro score."""
 
-
 import pandas as pd
 
 from src.features.transforms import rolling_z_score, sigmoid, to_month_end
@@ -63,11 +62,7 @@ def build_macro_dataframe(
     # Extend quarterly series to cover the full monthly date range.
     # GDP and M2V are published quarterly with ~2-month lag; carrying
     # the last known value forward is standard macro practice.
-    all_dates = (
-        gdp.index.union(cpi.index)
-        .union(yield_10y.index)
-        .union(m2.index)
-    )
+    all_dates = gdp.index.union(cpi.index).union(yield_10y.index).union(m2.index)
     if len(all_dates) > 0:
         gdp = gdp.reindex(all_dates).ffill()
         velocity = velocity.reindex(all_dates).ffill()

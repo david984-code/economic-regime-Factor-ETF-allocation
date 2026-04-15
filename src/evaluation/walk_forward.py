@@ -64,7 +64,12 @@ def _metrics_row(
     """Build metrics dict for one series."""
     rets = rets.dropna()
     if len(rets) < 5:
-        return {f"{name}_CAGR": np.nan, f"{name}_Sharpe": np.nan, f"{name}_MaxDD": np.nan, f"{name}_Vol": np.nan}
+        return {
+            f"{name}_CAGR": np.nan,
+            f"{name}_Sharpe": np.nan,
+            f"{name}_MaxDD": np.nan,
+            f"{name}_Vol": np.nan,
+        }
     m = compute_metrics(rets, rf_daily=CASH_DAILY_YIELD, bench_rets=bench_rets)
     row = {
         f"{name}_CAGR": m["CAGR"],
@@ -148,38 +153,48 @@ def run_walk_forward_evaluation(
 
     # Initialize timing report
     timing = TimingReport() if show_timing else None
-    
+
     start = start or START_DATE
     end = end or get_end_date()
-    
+
     # Fast mode: use recent data only
     if fast_mode and start == START_DATE:
         start = (pd.Timestamp(end) - pd.DateOffset(years=8)).strftime("%Y-%m-%d")
         logger.info("[FAST MODE] Using recent data only: %s to %s", start, end)
 
-    logger.info("Walk-forward: %s to %s, train>=%dmo, test=%dmo, %s",
-                start, end, min_train_months, test_months, "expanding" if expanding else "rolling")
+    logger.info(
+        "Walk-forward: %s to %s, train>=%dmo, test=%dmo, %s",
+        start,
+        end,
+        min_train_months,
+        test_months,
+        "expanding" if expanding else "rolling",
+    )
 
     # Use provided universe or defaults
-    from src.config import TICKERS, ASSETS
+    from src.config import ASSETS
+
     tickers_to_use = tickers if tickers is not None else TICKERS
     assets_to_use = assets if assets is not None else ASSETS
-    
+
     # Fetch prices (with caching)
     if timing:
         with timing.time("fetch_prices"):
             prices = fetch_prices(tickers=tickers_to_use, start=start, end=end)
     else:
         prices = fetch_prices(tickers=tickers_to_use, start=start, end=end)
-    
+
     # Load regime labels (with caching)
     if timing:
         with timing.time("load_regime_labels"):
             csv_path = OUTPUTS_DIR / "regime_labels_expanded.csv"
             if csv_path.exists():
-                regime_df = pd.read_csv(csv_path, parse_dates=["date"], index_col="date")
+                regime_df = pd.read_csv(
+                    csv_path, parse_dates=["date"], index_col="date"
+                )
             else:
                 from src.allocation.optimizer import load_regimes
+
                 regime_df = load_regimes()
             regime_df = regime_df.dropna(subset=["regime"])
             regime_df = regime_df.sort_index()
@@ -192,13 +207,14 @@ def run_walk_forward_evaluation(
             regime_df = pd.read_csv(csv_path, parse_dates=["date"], index_col="date")
         else:
             from src.allocation.optimizer import load_regimes
+
             regime_df = load_regimes()
         regime_df = regime_df.dropna(subset=["regime"])
         regime_df = regime_df.sort_index()
         if regime_df.index.duplicated().any():
             regime_df = regime_df[~regime_df.index.duplicated(keep="last")]
         regime_df = regime_df.reindex(prices.index).ffill()
-    
+
     returns_daily = prices[tickers_to_use].pct_change().iloc[1:]
     returns_daily["cash"] = CASH_DAILY_YIELD
 
@@ -206,23 +222,25 @@ def run_walk_forward_evaluation(
     if not segments:
         logger.warning("No segments generated. Need more history.")
         return pd.DataFrame()
-    
+
     # Fast mode: limit segments
     if max_segments and len(segments) > max_segments:
-        logger.info("[FAST MODE] Limiting segments from %d to %d", len(segments), max_segments)
+        logger.info(
+            "[FAST MODE] Limiting segments from %d to %d", len(segments), max_segments
+        )
         segments = segments[-max_segments:]
-    
+
     logger.info("Generated %d segments", len(segments))
 
     rows: list[dict] = []
-    
+
     # Pre-compute benchmarks once (outside segment loop)
     if timing:
         with timing.time("compute_benchmarks"):
             benchmarks = compute_benchmark_returns(returns_daily, regime_df)
     else:
         benchmarks = compute_benchmark_returns(returns_daily, regime_df)
-    
+
     for seg_idx, (train_start, train_end, test_start, test_end) in enumerate(segments):
         # Train: filter returns and regimes to train period
         if timing:
@@ -231,14 +249,18 @@ def run_walk_forward_evaluation(
                 train_returns = train_returns.loc[train_start:train_end]
                 if "cash" not in train_returns.columns:
                     train_returns["cash"] = (1.05) ** (1 / 12) - 1
-                train_regimes = regime_df.loc[:train_end].resample("ME").last().dropna(how="all")
+                train_regimes = (
+                    regime_df.loc[:train_end].resample("ME").last().dropna(how="all")
+                )
                 train_regimes = train_regimes.loc[train_regimes.index <= train_end]
         else:
             train_returns = prices.resample("ME").last().pct_change().dropna()
             train_returns = train_returns.loc[train_start:train_end]
             if "cash" not in train_returns.columns:
                 train_returns["cash"] = (1.05) ** (1 / 12) - 1
-            train_regimes = regime_df.loc[:train_end].resample("ME").last().dropna(how="all")
+            train_regimes = (
+                regime_df.loc[:train_end].resample("ME").last().dropna(how="all")
+            )
             train_regimes = train_regimes.loc[train_regimes.index <= train_end]
 
         if len(train_returns) < 24 or len(train_regimes) < 12:
@@ -255,10 +277,14 @@ def run_walk_forward_evaluation(
             if allocations is None:
                 if timing:
                     with timing.time("segment_optimization"):
-                        allocations = optimize_allocations_from_data(train_returns, train_regimes)
+                        allocations = optimize_allocations_from_data(
+                            train_returns, train_regimes
+                        )
                         set_cached("allocations", opt_params, allocations)
                 else:
-                    allocations = optimize_allocations_from_data(train_returns, train_regimes)
+                    allocations = optimize_allocations_from_data(
+                        train_returns, train_regimes
+                    )
                     set_cached("allocations", opt_params, allocations)
             else:
                 if timing:
@@ -266,10 +292,14 @@ def run_walk_forward_evaluation(
         else:
             if timing:
                 with timing.time("segment_optimization"):
-                    allocations = optimize_allocations_from_data(train_returns, train_regimes)
+                    allocations = optimize_allocations_from_data(
+                        train_returns, train_regimes
+                    )
             else:
-                allocations = optimize_allocations_from_data(train_returns, train_regimes)
-        
+                allocations = optimize_allocations_from_data(
+                    train_returns, train_regimes
+                )
+
         if not allocations:
             continue
 
@@ -277,7 +307,9 @@ def run_walk_forward_evaluation(
         if timing:
             with timing.time("segment_backtest"):
                 result = run_backtest_with_allocations(
-                    prices, regime_df, allocations,
+                    prices,
+                    regime_df,
+                    allocations,
                     return_weights=True,
                     use_stagflation_override=use_stagflation_override,
                     use_stagflation_risk_on_cap=use_stagflation_risk_on_cap,
@@ -304,7 +336,9 @@ def run_walk_forward_evaluation(
                 )
         else:
             result = run_backtest_with_allocations(
-                prices, regime_df, allocations,
+                prices,
+                regime_df,
+                allocations,
                 return_weights=True,
                 use_stagflation_override=use_stagflation_override,
                 use_stagflation_risk_on_cap=use_stagflation_risk_on_cap,
@@ -329,7 +363,7 @@ def run_walk_forward_evaluation(
                 quarterly_rebalance=quarterly_rebalance,
                 tolerance=tolerance,
             )
-        
+
         if isinstance(result, tuple):
             strat_rets, strat_weights = result
         else:
@@ -340,10 +374,16 @@ def run_walk_forward_evaluation(
         if len(test_rets) < 5:
             continue
 
-        test_bench = {k: v.loc[test_start:test_end].dropna() for k, v in benchmarks.items()}
-        bench_spy = bench_rets = test_bench.get("SPY") if "SPY" in test_bench else None
+        test_bench = {
+            k: v.loc[test_start:test_end].dropna() for k, v in benchmarks.items()
+        }
+        bench_spy = test_bench.get("SPY") if "SPY" in test_bench else None
 
-        w = strat_weights.loc[test_start:test_end] if strat_weights is not None else None
+        w = (
+            strat_weights.loc[test_start:test_end]
+            if strat_weights is not None
+            else None
+        )
         row: dict = {
             "segment": seg_idx,
             "train_start": train_start.strftime("%Y-%m"),
@@ -351,14 +391,18 @@ def run_walk_forward_evaluation(
             "test_start": test_start.strftime("%Y-%m"),
             "test_end": test_end.strftime("%Y-%m"),
         }
-        
+
         if timing:
             with timing.time("segment_metrics"):
-                row.update(_metrics_row("Strategy", test_rets, bench_rets=bench_spy, weights=w))
+                row.update(
+                    _metrics_row("Strategy", test_rets, bench_rets=bench_spy, weights=w)
+                )
                 for bname, bret in test_bench.items():
                     row.update(_metrics_row(bname, bret))
         else:
-            row.update(_metrics_row("Strategy", test_rets, bench_rets=bench_spy, weights=w))
+            row.update(
+                _metrics_row("Strategy", test_rets, bench_rets=bench_spy, weights=w)
+            )
             for bname, bret in test_bench.items():
                 row.update(_metrics_row(bname, bret))
 
@@ -402,7 +446,7 @@ def run_walk_forward_evaluation(
     # Persistence (optional in fast mode)
     if not skip_persist:
         OUTPUTS_DIR.mkdir(exist_ok=True)
-        
+
         if timing:
             with timing.time("csv_write"):
                 latest_path = OUTPUTS_DIR / "walk_forward_results.csv"
@@ -414,10 +458,11 @@ def run_walk_forward_evaluation(
             df.to_csv(latest_path, index=False)
             run_csv_path = OUTPUTS_DIR / f"walk_forward_{run_id}.csv"
             df.to_csv(run_csv_path, index=False)
-        
+
         if timing:
             with timing.time("sqlite_persist"):
                 from src.evaluation.model_results_db import persist_walk_forward_run
+
                 persist_walk_forward_run(
                     run_id,
                     df,
@@ -447,6 +492,7 @@ def run_walk_forward_evaluation(
                 )
         else:
             from src.evaluation.model_results_db import persist_walk_forward_run
+
             persist_walk_forward_run(
                 run_id,
                 df,
@@ -476,12 +522,14 @@ def run_walk_forward_evaluation(
                 str(run_csv_path),
             )
 
-        logger.info("Saved walk-forward results to %s and %s", latest_path, run_csv_path)
+        logger.info(
+            "Saved walk-forward results to %s and %s", latest_path, run_csv_path
+        )
     else:
         logger.info("[FAST MODE] Skipping CSV and SQLite persistence")
-    
+
     # Log timing report
     if timing:
         timing.log_summary()
-    
+
     return df

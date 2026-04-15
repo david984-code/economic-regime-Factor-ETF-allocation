@@ -11,7 +11,10 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
 
 from src.config import OUTPUTS_DIR, get_end_date
-from src.features.market_features import build_momentum_features, build_seasonality_features
+from src.features.market_features import (
+    build_momentum_features,
+    build_seasonality_features,
+)
 from src.utils.database import Database
 
 if TYPE_CHECKING:
@@ -24,9 +27,7 @@ def load_regime_features() -> pd.DataFrame:
     """Load regime labels with macro features from CSV."""
     path = OUTPUTS_DIR / "regime_labels_expanded.csv"
     if not path.exists():
-        raise FileNotFoundError(
-            f"Missing {path}. Run regime classification first."
-        )
+        raise FileNotFoundError(f"Missing {path}. Run regime classification first.")
     df = pd.read_csv(path, parse_dates=["date"])
     return df.sort_values("date").dropna(subset=["regime", "risk_on"])
 

@@ -6,6 +6,7 @@ import argparse
 import logging
 import time
 from datetime import datetime
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -18,7 +19,12 @@ from src.utils.ticker_universe import parse_tickers_arg, resolve_tickers
 logger = logging.getLogger(__name__)
 
 
-def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
+def run_daily_pipeline(
+    cli_tickers: list[str] | None = None,
+    dry_run: bool = False,
+    config_path: str | None = None,
+    no_cache: bool = False,
+) -> int:
     """Run the complete daily pipeline in-process.
 
     Steps:
@@ -27,10 +33,35 @@ def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
         3. Portfolio optimization (Sortino)
         4. Backtest and save results
 
+    Args:
+        cli_tickers: Override default ticker universe.
+        dry_run: If True, run all steps but skip file writes and execution.
+        config_path: Path to YAML config file (e.g. config/paper_trading.yaml).
+        no_cache: If True, bypass all local data caches and fetch fresh.
+
     Returns:
         0 on success, 1 on failure.
     """
     load_dotenv()
+
+    if config_path:
+        import yaml
+
+        cfg_file = Path(config_path)
+        if not cfg_file.exists():
+            logger.error("Config file not found: %s", config_path)
+            return 1
+        with open(cfg_file) as f:
+            _user_cfg = yaml.safe_load(f)
+        logger.info("[CONFIG] Loaded config from %s", config_path)
+        if _user_cfg.get("dry_run", False):
+            dry_run = True
+
+    if dry_run:
+        logger.info("[CONFIG] DRY RUN — no file writes, no order execution")
+    if no_cache:
+        logger.info("[CONFIG] NO CACHE — forcing fresh data downloads")
+
     api_key = get_fred_api_key()
     if not api_key:
         logger.error(
@@ -53,22 +84,30 @@ def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
     logger.info("\n[STEP] Regime classification")
     try:
         from src.data.fred_ingestion import get_fred_cache_stats
+
         t0 = time.perf_counter()
         _run_regime_classification(api_key)
         timings["regime_classification"] = time.perf_counter() - t0
         fred_hits, fred_misses = get_fred_cache_stats()
         logger.info("[FRED] Cache stats: %d hits, %d misses", fred_hits, fred_misses)
-        logger.info("[OK] Completed: Regime classification (%.2fs)", timings["regime_classification"])
+        logger.info(
+            "[OK] Completed: Regime classification (%.2fs)",
+            timings["regime_classification"],
+        )
     except Exception as e:
         logger.exception("[FAIL] Regime classification: %s", e)
         return 1
 
     # Fetch market data ONCE for all downstream steps
-    logger.info("\n[STEP] Fetching market data (shared by forecast, optimizer, backtest)")
+    logger.info(
+        "\n[STEP] Fetching market data (shared by forecast, optimizer, backtest)"
+    )
     t0_fetch = time.perf_counter()
     tickers = resolve_tickers(cli_tickers)
     logger.info("[CONFIG] Universe: %d tickers: %s", len(tickers), ",".join(tickers))
-    pipeline_data = PipelineData(tickers=tickers, start=START_DATE, end=get_end_date())
+    pipeline_data = PipelineData(
+        tickers=tickers, start=START_DATE, end=get_end_date(), use_cache=not no_cache
+    )
     pipeline_data.get_prices()  # Triggers fetch, populates cache
     timings["data_fetch"] = time.perf_counter() - t0_fetch
     logger.info(
@@ -103,6 +142,7 @@ def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
     try:
         t0 = time.perf_counter()
         from src.execution.auto_rebalance import run_auto_rebalance
+
         rebal_result = run_auto_rebalance()
         timings["auto_rebalance"] = time.perf_counter() - t0
         logger.info(
@@ -118,6 +158,7 @@ def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
     try:
         t0 = time.perf_counter()
         from src.daily_report import send_daily_report
+
         send_daily_report()
         timings["daily_report"] = time.perf_counter() - t0
         logger.info("[OK] Completed: Daily report (%.2fs)", timings["daily_report"])
@@ -128,31 +169,46 @@ def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
     logger.info("\n" + "=" * 80)
     logger.info("SUMMARY: All steps completed in %.1fs", elapsed)
     logger.info("TIMING BY STEP:")
-    for k in ["data_fetch", "regime_classification", "regime_forecast", "optimizer", "backtest", "auto_rebalance", "daily_report"]:
+    for k in [
+        "data_fetch",
+        "regime_classification",
+        "regime_forecast",
+        "optimizer",
+        "backtest",
+        "auto_rebalance",
+        "daily_report",
+    ]:
         if k in timings:
             logger.info("  %s: %.2fs", k, timings[k])
-    logger.info("SUMMARY: Market data fetched once in %.2fs (3 steps reused cache)", timings.get("data_fetch", 0))
+    logger.info(
+        "SUMMARY: Market data fetched once in %.2fs (3 steps reused cache)",
+        timings.get("data_fetch", 0),
+    )
     logger.info("=" * 80)
     return 0
 
 
 def _run_regime_classification(api_key: str) -> None:
     from src.models.regime_classifier import RegimeClassifier
+
     RegimeClassifier(api_key).run()
 
 
 def _run_regime_forecast(pipeline_data: PipelineData) -> None:
     from src.models.regime_forecast import main as forecast_main
+
     forecast_main(pipeline_data=pipeline_data)
 
 
 def _run_optimizer(pipeline_data: PipelineData) -> None:
     from src.allocation.optimizer import run_optimizer
+
     run_optimizer(pipeline_data=pipeline_data)
 
 
 def _run_backtest(pipeline_data: PipelineData) -> None:
     from src.backtest.engine import run_backtest
+
     run_backtest(pipeline_data=pipeline_data)
 
 
@@ -166,6 +222,25 @@ def _parse_cli() -> argparse.Namespace:
         default="",
         help="Comma-separated symbols (overrides PIPELINE_TICKERS env and config default).",
     )
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Run all steps but skip file writes and order execution.",
+    )
+    p.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Path to YAML config file (e.g. config/paper_trading.yaml).",
+    )
+    p.add_argument(
+        "--no-cache",
+        action="store_true",
+        default=False,
+        help="Bypass local data caches and force fresh downloads.",
+    )
     return p.parse_args()
 
 
@@ -175,4 +250,11 @@ if __name__ == "__main__":
     load_dotenv()
     args = _parse_cli()
     cli_list = parse_tickers_arg(args.tickers)
-    sys.exit(run_daily_pipeline(cli_tickers=cli_list))
+    sys.exit(
+        run_daily_pipeline(
+            cli_tickers=cli_list,
+            dry_run=args.dry_run,
+            config_path=args.config,
+            no_cache=args.no_cache,
+        )
+    )

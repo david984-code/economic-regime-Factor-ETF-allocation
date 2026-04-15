@@ -54,7 +54,9 @@ def _regime_status() -> dict[str, Any]:
         prev = df.iloc[-2] if len(df) >= 2 else latest
         out: dict[str, Any] = {
             "regime": str(latest["regime"]),
-            "risk_on": float(latest["risk_on"]) if pd.notna(latest["risk_on"]) else None,
+            "risk_on": float(latest["risk_on"])
+            if pd.notna(latest["risk_on"])
+            else None,
             "date": str(latest.name),
             "prev_regime": str(prev["regime"]),
             "changed": str(latest["regime"]) != str(prev["regime"]),
@@ -183,12 +185,14 @@ def _market_performance(weights: dict[str, float]) -> dict[str, Any]:
                 ret = float(prices[t].pct_change().iloc[-1])
                 w = weights.get(t, 0.0)
                 if w > 0.001:
-                    movers.append({
-                        "ticker": t,
-                        "return": round(ret * 100, 2),
-                        "weight": round(w * 100, 1),
-                        "contribution": round(ret * w * 100, 3),
-                    })
+                    movers.append(
+                        {
+                            "ticker": t,
+                            "return": round(ret * 100, 2),
+                            "weight": round(w * 100, 1),
+                            "contribution": round(ret * w * 100, 3),
+                        }
+                    )
         movers.sort(key=lambda x: abs(x["contribution"]), reverse=True)
         periods["movers"] = movers
 
@@ -244,7 +248,9 @@ def print_status(quick: bool = False) -> None:
     )
     print(f"\n  Pipeline: {status_icon} {health.get('status', 'unknown')}")
     if health.get("last_log"):
-        print(f"  Last run: {health.get('last_log_time', '?')} ({health.get('age_hours', '?')}h ago)")
+        print(
+            f"  Last run: {health.get('last_log_time', '?')} ({health.get('age_hours', '?')}h ago)"
+        )
     if health.get("stale"):
         print("  !! WARNING: Pipeline has not run in >28 hours")
     if health.get("failure"):
@@ -260,7 +266,9 @@ def print_status(quick: bool = False) -> None:
             print(f"  !! REGIME CHANGED from {regime.get('prev_regime')}")
         if regime.get("forecast"):
             fc = regime["forecast"]
-            print(f"  Forecast: risk_on={fc.get('risk_on_forecast', '?'):.3f} (next month)")
+            print(
+                f"  Forecast: risk_on={fc.get('risk_on_forecast', '?'):.3f} (next month)"
+            )
 
     # Current weights
     if weights:
@@ -286,7 +294,9 @@ def print_status(quick: bool = False) -> None:
     if "today" in perf:
         t = perf["today"]
         print(f"\n  Today ({t['date']}):")
-        print(f"    Portfolio: {t['portfolio']:+.2f}%  SPY: {t['spy']:+.2f}%  vs SPY: {t['vs_spy']:+.2f}%")
+        print(
+            f"    Portfolio: {t['portfolio']:+.2f}%  SPY: {t['spy']:+.2f}%  vs SPY: {t['vs_spy']:+.2f}%"
+        )
     if "week" in perf:
         w = perf["week"]
         print(f"  This week:  Port: {w['portfolio']:+.2f}%  SPY: {w['spy']:+.2f}%")
@@ -309,8 +319,10 @@ def print_status(quick: bool = False) -> None:
     # Backtest metrics
     if regime.get("backtest"):
         bt = regime["backtest"]
-        print(f"\n  Backtest: Sharpe={bt.get('Sharpe', 0):.3f}  "
-              f"CAGR={bt.get('CAGR', 0):.2%}  MaxDD={bt.get('Max Drawdown', 0):.2%}")
+        print(
+            f"\n  Backtest: Sharpe={bt.get('Sharpe', 0):.3f}  "
+            f"CAGR={bt.get('CAGR', 0):.2%}  MaxDD={bt.get('Max Drawdown', 0):.2%}"
+        )
 
     # IBKR
     ibkr = _ibkr_status()
