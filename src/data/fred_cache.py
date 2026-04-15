@@ -1,6 +1,13 @@
-"""Local macro cache for FRED series. Incremental fetch to minimize API calls."""
+"""Local macro cache for FRED series. Incremental fetch to minimize API calls.
+
+Staleness policy (based on series publication frequency):
+    Quarterly (GDP, M2V):  30-day cache
+    Monthly (CPI, M2, ...): 7-day cache
+    Daily/Weekly (yields, claims): 1-day cache
+"""
 
 import logging
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -10,11 +17,31 @@ from src.config import MACRO_CACHE_DIR
 
 logger = logging.getLogger(__name__)
 
+QUARTERLY_SERIES = {"GDP", "M2V", "A191RL1Q225SBEA"}
+DAILY_SERIES = {"DGS10", "DGS3MO", "DGS2", "ICSA"}
+
+STALENESS_DAYS: dict[str, int] = {}
+for _sid in QUARTERLY_SERIES:
+    STALENESS_DAYS[_sid] = 30
+for _sid in DAILY_SERIES:
+    STALENESS_DAYS[_sid] = 1
+DEFAULT_STALENESS_DAYS = 7  # monthly series
+
 
 def _cache_path(series_id: str) -> Path:
     """Path to cached CSV for a series."""
     MACRO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     return MACRO_CACHE_DIR / f"{series_id}.csv"
+
+
+def _is_stale(series_id: str) -> bool:
+    """True if the cache file is older than the staleness policy allows."""
+    path = _cache_path(series_id)
+    if not path.exists():
+        return True
+    max_age = STALENESS_DAYS.get(series_id, DEFAULT_STALENESS_DAYS)
+    mtime = datetime.fromtimestamp(path.stat().st_mtime)
+    return datetime.now() - mtime > timedelta(days=max_age)
 
 
 def load_cached_series(series_id: str) -> pd.Series | None:
@@ -53,10 +80,15 @@ def fetch_series_with_cache(
 ) -> tuple[pd.Series, str]:
     """Fetch FRED series, using local cache and incremental API when possible.
 
+    Staleness: cache is bypassed if the file age exceeds the policy for this
+    series (quarterly=30d, monthly=7d, daily=1d).
+
     Returns:
         (series, source) where source is "cache", "api_full", or "api_incremental"
     """
-    cached = load_cached_series(series_id) if use_cache else None
+    cached = None
+    if use_cache and not _is_stale(series_id):
+        cached = load_cached_series(series_id)
 
     if cached is not None and len(cached) > 0:
         cached_max = cached.index.max()
@@ -65,10 +97,16 @@ def fetch_series_with_cache(
         else:
             cached_max_str = str(cached_max)[:10]
         if cached_max_str >= end_date:
-            logger.info("[FRED cache] Loaded %s from cache (latest %s)", series_id, cached_max_str)
+            logger.info(
+                "[FRED cache] Loaded %s from cache (latest %s)",
+                series_id,
+                cached_max_str,
+            )
             return cached, "cache"
 
-        fetch_start = (pd.Timestamp(cached_max_str) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+        fetch_start = (pd.Timestamp(cached_max_str) + pd.Timedelta(days=1)).strftime(
+            "%Y-%m-%d"
+        )
         try:
             new_data = fred.get_series(
                 series_id,
@@ -90,7 +128,12 @@ def fetch_series_with_cache(
             )
             return combined, "api_incremental"
         except Exception as e:
-            logger.warning("[FRED cache] Incremental fetch failed for %s: %s. Falling back to full fetch.", series_id, e)
+            logger.warning(
+                "[FRED cache] Incremental fetch failed for %s: %s. "
+                "Falling back to full fetch.",
+                series_id,
+                e,
+            )
 
     s = fred.get_series(series_id, observation_end=end_date)
     s.index = pd.to_datetime(s.index)

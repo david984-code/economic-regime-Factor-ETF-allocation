@@ -6,7 +6,7 @@ momentum features) to avoid repeated yfinance calls.
 
 import logging
 import time
-from typing import Sequence
+from collections.abc import Sequence
 
 import pandas as pd
 
@@ -28,10 +28,12 @@ class PipelineData:
         tickers: Sequence[str] | None = None,
         start: str | None = None,
         end: str | None = None,
+        use_cache: bool = True,
     ) -> None:
         self._tickers = list(tickers) if tickers else list(TICKERS)
         self._start = start or START_DATE
         self._end = end or get_end_date()
+        self._use_cache = use_cache
         self._prices: pd.DataFrame | None = None
         self._fetch_time_sec: float | None = None
         self._source = "cache"  # "fetch" or "cache" for logging
@@ -44,6 +46,7 @@ class PipelineData:
                 tickers=self._tickers,
                 start=self._start,
                 end=self._end,
+                use_cache=self._use_cache,
             )
             self._fetch_time_sec = time.perf_counter() - t0
             self._source = "fetch"
@@ -66,7 +69,11 @@ class PipelineData:
         self._prices = prices.copy()
         self._fetch_time_sec = 0.0
         self._source = "injected"
-        logger.debug("[DATA] Injected prices: %d tickers, %d rows", len(prices.columns), len(prices))
+        logger.debug(
+            "[DATA] Injected prices: %d tickers, %d rows",
+            len(prices.columns),
+            len(prices),
+        )
 
     def get_monthly_returns(self) -> pd.DataFrame:
         """Return monthly returns (month-end). Same logic as fetch_monthly_returns."""
@@ -87,7 +94,9 @@ class PipelineData:
         """Return 1/3/6 month momentum for a ticker. Same logic as build_momentum_features."""
         prices = self.get_prices()
         if ticker not in prices.columns:
-            raise ValueError(f"Ticker {ticker} not in cached prices: {list(prices.columns)}")
+            raise ValueError(
+                f"Ticker {ticker} not in cached prices: {list(prices.columns)}"
+            )
         px = prices[ticker]
         monthly = px.resample("ME").last()
         ret_1m = monthly.pct_change(1)

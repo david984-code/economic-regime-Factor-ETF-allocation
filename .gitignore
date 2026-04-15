@@ -23,6 +23,7 @@ src/*.egg-info/
 
 # Generated outputs
 outputs/
+data/cache/
 *.csv
 *.xlsx
 *.db

@@ -35,13 +35,13 @@ def load_regimes() -> pd.DataFrame:
         df = db.load_regime_labels()
         db.close()
         return df
-    except Exception:
+    except Exception as exc:
         db.close()
         path = OUTPUTS_DIR / "regime_labels_expanded.csv"
         if not path.exists():
             raise FileNotFoundError(
                 "No regime data found. Run regime classification first."
-            )
+            ) from exc
         return pd.read_csv(path, parse_dates=["date"], index_col="date")
 
 
@@ -81,9 +81,7 @@ def _get_constraints(
       - Per-asset min/max floors and caps
       - Min aggregate risk-on sleeve weight (Recovery/Overheating)
     """
-    min_cash, max_cash = REGIME_CASH.get(
-        regime, (DEFAULT_MIN_CASH, DEFAULT_MAX_CASH)
-    )
+    min_cash, max_cash = REGIME_CASH.get(regime, (DEFAULT_MIN_CASH, DEFAULT_MAX_CASH))
     constraints: list[dict[str, Any]] = [
         {"type": "eq", "fun": lambda w: np.sum(w) - 1},
         {"type": "ineq", "fun": lambda w, mc=min_cash: w[-1] - mc},
@@ -95,20 +93,24 @@ def _get_constraints(
     for asset, min_w in min_assets.items():
         if asset in asset_list:
             idx = asset_list.index(asset)
-            constraints.append({
-                "type": "ineq",
-                "fun": lambda w, i=idx, m=min_w: w[i] - m,
-            })
+            constraints.append(
+                {
+                    "type": "ineq",
+                    "fun": lambda w, i=idx, m=min_w: w[i] - m,
+                }
+            )
 
     # Per-asset maximum caps (prevent gold/bond concentration in risk-on regimes)
     max_assets = REGIME_MAX_ASSETS.get(regime, {})
     for asset, max_w in max_assets.items():
         if asset in asset_list:
             idx = asset_list.index(asset)
-            constraints.append({
-                "type": "ineq",
-                "fun": lambda w, i=idx, m=max_w: m - w[i],
-            })
+            constraints.append(
+                {
+                    "type": "ineq",
+                    "fun": lambda w, i=idx, m=max_w: m - w[i],
+                }
+            )
 
     # Min aggregate risk-on sleeve weight
     risk_on_indices = [
@@ -116,24 +118,111 @@ def _get_constraints(
     ]
     min_risk_on = REGIME_MIN_RISK_ON.get(regime)
     if min_risk_on is not None:
-        constraints.append({
-            "type": "ineq",
-            "fun": lambda w, idxs=risk_on_indices, m=min_risk_on: (
-                sum(w[i] for i in idxs) - m
-            ),
-        })
+        constraints.append(
+            {
+                "type": "ineq",
+                "fun": lambda w, idxs=risk_on_indices, m=min_risk_on: (
+                    sum(w[i] for i in idxs) - m
+                ),
+            }
+        )
 
     # Max aggregate risk-on sleeve weight (defensive regimes)
     max_risk_on = REGIME_MAX_RISK_ON.get(regime)
     if max_risk_on is not None:
-        constraints.append({
-            "type": "ineq",
-            "fun": lambda w, idxs=risk_on_indices, m=max_risk_on: (
-                m - sum(w[i] for i in idxs)
-            ),
-        })
+        constraints.append(
+            {
+                "type": "ineq",
+                "fun": lambda w, idxs=risk_on_indices, m=max_risk_on: (
+                    m - sum(w[i] for i in idxs)
+                ),
+            }
+        )
 
     return constraints
+
+
+def _ensure_cash_column(returns: pd.DataFrame) -> pd.DataFrame:
+    """Add a synthetic cash column (~5% annualized) if missing."""
+    if "cash" not in returns.columns:
+        returns = returns.copy()
+        returns["cash"] = (1.05) ** (1 / 12) - 1
+    return returns
+
+
+def _merge_returns_and_regimes(
+    returns: pd.DataFrame,
+    regime_df: pd.DataFrame,
+) -> tuple[pd.DataFrame, list[str], list[str]]:
+    """Merge monthly returns with regime labels on Period.
+
+    Returns (merged_df, risky_assets, full_asset_list).
+    """
+    ret = returns.copy()
+    if "Period" not in ret.columns and ret.index is not None:
+        ret["Period"] = ret.index.to_period("M")
+
+    reg = regime_df.copy()
+    if "Period" not in reg.columns:
+        reg["Period"] = pd.to_datetime(reg.index).to_period("M")
+
+    ret = _ensure_cash_column(ret)
+    all_assets = [c for c in ret.columns if c != "Period"]
+    risky_assets = [a for a in all_assets if a != "cash"]
+    full_asset_list = risky_assets + ["cash"]
+
+    regime_cols = [c for c in ["Period", "regime"] if c in reg.columns]
+    merged = pd.merge(ret, reg[regime_cols], on="Period", how="inner")
+    merged.set_index("Period", inplace=True)
+    return merged, risky_assets, full_asset_list
+
+
+def _optimize_single_regime(
+    regime: str,
+    subset_risky: pd.DataFrame,
+    risky_assets: list[str],
+    full_asset_list: list[str],
+) -> dict[str, float] | None:
+    """Run Sortino optimization for a single regime. Returns weights or None."""
+    if len(subset_risky) < 2:
+        return None
+    returns_risky = subset_risky.values.astype(float)
+    n = len(full_asset_list)
+    min_cash, max_cash = REGIME_CASH.get(regime, (DEFAULT_MIN_CASH, DEFAULT_MAX_CASH))
+    init_guess = np.full(n, 0.0)
+    start_cash = (min_cash + max_cash) / 2
+    init_guess[:-1] = (1 - start_cash) / (n - 1)
+    init_guess[-1] = start_cash
+
+    result = minimize(
+        _negative_sortino,
+        init_guess,
+        args=(returns_risky,),
+        method="SLSQP",
+        bounds=[(0.0, 1.0)] * n,
+        constraints=_get_constraints(n, regime, risky_assets),
+    )
+    if result.success:
+        return dict(zip(full_asset_list, result.x, strict=False))
+    logger.error("Optimization failed for %s: %s", regime, result.message)
+    return None
+
+
+def _save_allocations(allocations: dict[str, dict[str, float]]) -> None:
+    """Persist optimized allocations to DB, CSV, and formatted Excel."""
+    db = Database()
+    db.save_optimal_allocations(allocations)
+    db.close()
+
+    OUTPUTS_DIR.mkdir(exist_ok=True)
+    df_opt = pd.DataFrame(allocations).T
+    df_opt.index.name = "regime"
+    df_opt.to_csv(OUTPUTS_DIR / "optimal_allocations.csv")
+    logger.info("Saved optimal allocations")
+
+    from src.allocation.format_allocations import format_allocations_to_excel
+
+    format_allocations_to_excel()
 
 
 def optimize_allocations_from_data(
@@ -151,50 +240,17 @@ def optimize_allocations_from_data(
     Returns:
         Dict regime -> {asset: weight}.
     """
-    ret = returns.copy()
-    if "Period" not in ret.columns and ret.index is not None:
-        ret["Period"] = ret.index.to_period("M")
-    reg = regime_df.copy()
-    if "Period" not in reg.columns:
-        reg["Period"] = pd.to_datetime(reg.index).to_period("M")
-
-    all_assets = [c for c in ret.columns if c != "Period"]
-    risky_assets = [a for a in all_assets if a != "cash"]
-    if "cash" not in all_assets:
-        cash_monthly = (1.05) ** (1 / 12) - 1
-        ret["cash"] = cash_monthly
-        all_assets = [c for c in ret.columns if c != "Period"]
-        risky_assets = [a for a in all_assets if a != "cash"]
-    full_asset_list = risky_assets + ["cash"]
-
-    merged = pd.merge(ret, reg[["Period", "regime"]], on="Period", how="inner")
-    merged.set_index("Period", inplace=True)
-
+    merged, risky_assets, full_asset_list = _merge_returns_and_regimes(
+        returns, regime_df
+    )
     optimal_allocations: dict[str, dict[str, float]] = {}
     for regime in merged["regime"].unique():
-        subset = merged[merged["regime"] == regime]
-        subset_risky = subset[risky_assets].fillna(0)
-        if len(subset_risky) < 2:
-            continue
-        returns_risky = subset_risky.values.astype(float)
-        n = len(full_asset_list)
-        min_cash, max_cash = REGIME_CASH.get(
-            regime, (DEFAULT_MIN_CASH, DEFAULT_MAX_CASH)
+        subset_risky = merged[merged["regime"] == regime][risky_assets].fillna(0)
+        weights = _optimize_single_regime(
+            regime, subset_risky, risky_assets, full_asset_list
         )
-        init_guess = np.full(n, 0.0)
-        start_cash = (min_cash + max_cash) / 2
-        init_guess[:-1] = (1 - start_cash) / (n - 1)
-        init_guess[-1] = start_cash
-        result = minimize(
-            _negative_sortino,
-            init_guess,
-            args=(returns_risky,),
-            method="SLSQP",
-            bounds=[(0.0, 1.0)] * n,
-            constraints=_get_constraints(n, regime, risky_assets),
-        )
-        if result.success:
-            optimal_allocations[regime] = dict(zip(full_asset_list, result.x))
+        if weights is not None:
+            optimal_allocations[regime] = weights
     return optimal_allocations
 
 
@@ -202,79 +258,32 @@ def run_optimizer(pipeline_data: "PipelineData | None" = None) -> None:
     """Run Sortino optimization per regime and save.
 
     Args:
-        pipeline_data: If provided, use cached monthly returns. Otherwise fetch via fetch_monthly_returns.
+        pipeline_data: If provided, use cached monthly returns.
+            Otherwise fetch via fetch_monthly_returns.
     """
     if pipeline_data is not None:
         returns = pipeline_data.get_monthly_returns()
         logger.debug("[DATA] Optimizer using shared pipeline_data (cache hit)")
     else:
         returns = fetch_monthly_returns(end=get_end_date())
-    if "cash" not in returns.columns:
-        cash_monthly = (1.05) ** (1 / 12) - 1
-        returns["cash"] = cash_monthly
-        logger.warning("Added synthetic cash column (~5%% annualized)")
+    returns = _ensure_cash_column(returns)
 
-    returns["Period"] = returns.index.to_period("M")
     regimes = load_regimes()
-    regimes["Period"] = pd.to_datetime(regimes.index).to_period("M")
-
-    all_assets = [c for c in returns.columns if c != "Period"]
-    risky_assets = [a for a in all_assets if a != "cash"]
-    full_asset_list = risky_assets + ["cash"]
-
-    merged = pd.merge(returns, regimes, on="Period", how="inner")
-    merged.set_index("Period", inplace=True)
+    merged, risky_assets, full_asset_list = _merge_returns_and_regimes(returns, regimes)
 
     optimal_allocations: dict[str, dict[str, float]] = {}
-
     for regime in merged["regime"].unique():
         logger.info("Optimizing for regime: %s (Sortino)", regime)
-        subset = merged[merged["regime"] == regime]
-        subset_risky = subset[risky_assets].fillna(0)
-
-        if len(subset_risky) < 2:
-            logger.warning("Skipping regime %s: not enough data", regime)
-            continue
-
-        returns_risky = subset_risky.values.astype(float)
-        n = len(full_asset_list)
-        min_cash, max_cash = REGIME_CASH.get(
-            regime, (DEFAULT_MIN_CASH, DEFAULT_MAX_CASH)
+        subset_risky = merged[merged["regime"] == regime][risky_assets].fillna(0)
+        weights = _optimize_single_regime(
+            regime, subset_risky, risky_assets, full_asset_list
         )
-
-        init_guess = np.full(n, 0.0)
-        start_cash = (min_cash + max_cash) / 2
-        init_guess[:-1] = (1 - start_cash) / (n - 1)
-        init_guess[-1] = start_cash
-
-        result = minimize(
-            _negative_sortino,
-            init_guess,
-            args=(returns_risky,),
-            method="SLSQP",
-            bounds=[(0.0, 1.0)] * n,
-            constraints=_get_constraints(n, regime, risky_assets),
-        )
-
-        if result.success:
-            optimal_allocations[regime] = dict(zip(full_asset_list, result.x))
+        if weights is not None:
+            optimal_allocations[regime] = weights
             logger.info("Optimized: %s", regime)
-        else:
-            logger.error("Failure for %s: %s", regime, result.message)
 
     if optimal_allocations:
-        db = Database()
-        db.save_optimal_allocations(optimal_allocations)
-        db.close()
-
-        OUTPUTS_DIR.mkdir(exist_ok=True)
-        df_opt = pd.DataFrame(optimal_allocations).T
-        df_opt.index.name = "regime"
-        df_opt.to_csv(OUTPUTS_DIR / "optimal_allocations.csv")
-        logger.info("Saved optimal allocations")
-
-        from src.allocation.format_allocations import format_allocations_to_excel
-        format_allocations_to_excel()
+        _save_allocations(optimal_allocations)
     else:
         logger.warning("No successful optimizations")
 
