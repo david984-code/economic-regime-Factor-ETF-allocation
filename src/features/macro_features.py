@@ -1,12 +1,37 @@
 """Macro feature engineering: resample, z-scores, macro score."""
 
-
 import pandas as pd
 
 from src.features.transforms import rolling_z_score, sigmoid, to_month_end
 
+# Approximate FRED publication lag (calendar days from observation to public release).
+# Observation indexed at d becomes available from d + lag (used to avoid lookahead).
+PUBLICATION_LAG_DAYS: dict[str, int] = {
+    "gdp": 30,
+    "cpi": 15,
+    "yield_10y": 1,
+    "yield_3m": 1,
+    "m2": 21,
+    "velocity": 75,
+    "pmi": 7,
+    "claims": 7,
+    "hy_spread": 1,
+    "indpro": 17,
+}
 
-def resample_to_monthly(
+
+def _lag_shift_resample(s: pd.Series, lag_days: int) -> pd.Series:
+    """Shift observation dates forward by publication lag, then month-end sampling."""
+    s = s.copy()
+    if len(s) == 0:
+        return to_month_end(s)
+    s.index = pd.to_datetime(s.index) + pd.Timedelta(days=int(lag_days))
+    s = s.resample("ME").last()
+    s = s.ffill()
+    return to_month_end(s)
+
+
+def resample_to_monthly_legacy(
     gdp: pd.Series,
     cpi: pd.Series,
     yield_10y: pd.Series,
@@ -14,7 +39,7 @@ def resample_to_monthly(
     m2: pd.Series,
     velocity: pd.Series,
 ) -> tuple[pd.Series, ...]:
-    """Resample all series to monthly frequency (month-end)."""
+    """Legacy (no publication lag): resample to month-end. For bias comparison only."""
     gdp = gdp.resample("ME").ffill()
     yield_10y = yield_10y.resample("ME").ffill()
     yield_3m = yield_3m.resample("ME").ffill()
@@ -31,12 +56,48 @@ def resample_to_monthly(
     return gdp, cpi, yield_10y, yield_3m, m2, velocity
 
 
-def resample_high_freq_to_monthly(hf: dict[str, pd.Series]) -> dict[str, pd.Series]:
-    """Resample high-frequency series to month-end."""
+def resample_to_monthly(
+    gdp: pd.Series,
+    cpi: pd.Series,
+    yield_10y: pd.Series,
+    yield_3m: pd.Series,
+    m2: pd.Series,
+    velocity: pd.Series,
+) -> tuple[pd.Series, ...]:
+    """Resample to month-end timestamps with approximate publication-lag shifts."""
+    gdp = _lag_shift_resample(gdp, PUBLICATION_LAG_DAYS["gdp"])
+    cpi = _lag_shift_resample(cpi, PUBLICATION_LAG_DAYS["cpi"])
+    yield_10y = _lag_shift_resample(yield_10y, PUBLICATION_LAG_DAYS["yield_10y"])
+    yield_3m = _lag_shift_resample(yield_3m, PUBLICATION_LAG_DAYS["yield_3m"])
+    m2 = _lag_shift_resample(m2, PUBLICATION_LAG_DAYS["m2"])
+    velocity = _lag_shift_resample(velocity, PUBLICATION_LAG_DAYS["velocity"])
+    return gdp, cpi, yield_10y, yield_3m, m2, velocity
+
+
+def resample_high_freq_to_monthly_legacy(
+    hf: dict[str, pd.Series],
+) -> dict[str, pd.Series]:
+    """Legacy high-frequency resample (no publication lag)."""
     out: dict[str, pd.Series] = {}
     for name, s in hf.items():
         s = s.copy()
         s.index = pd.to_datetime(s.index)
+        if name == "claims":
+            s = s.resample("ME").mean()
+        else:
+            s = s.resample("ME").last().ffill()
+        s = to_month_end(s)
+        out[name] = s
+    return out
+
+
+def resample_high_freq_to_monthly(hf: dict[str, pd.Series]) -> dict[str, pd.Series]:
+    """Resample high-frequency series to month-end with publication lag."""
+    out: dict[str, pd.Series] = {}
+    for name, s in hf.items():
+        lag = PUBLICATION_LAG_DAYS.get(name, 0)
+        s = s.copy()
+        s.index = pd.to_datetime(s.index) + pd.Timedelta(days=int(lag))
         if name == "claims":
             s = s.resample("ME").mean()
         else:
@@ -60,9 +121,6 @@ def build_macro_dataframe(
     Forward-fills quarterly series (GDP, velocity) so that months between
     releases carry the last known value instead of producing NaN.
     """
-    # Extend quarterly series to cover the full monthly date range.
-    # GDP and M2V are published quarterly with ~2-month lag; carrying
-    # the last known value forward is standard macro practice.
     all_dates = (
         gdp.index.union(cpi.index)
         .union(yield_10y.index)

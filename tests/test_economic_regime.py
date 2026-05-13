@@ -195,7 +195,7 @@ class TestEconomicRegimeClassifier:
         with patch.object(pd.DataFrame, "to_csv", side_effect=mock_to_csv):
             classifier.save_results(df, tmp_path)
 
-        assert call_count == 3
+        assert call_count == 4
         assert mock_sleep.call_count == 2
         mock_sleep.assert_any_call(0.5)
         mock_sleep.assert_any_call(1.0)

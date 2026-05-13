@@ -1,7 +1,6 @@
 """Rule-based economic regime classification."""
 
 import logging
-import os
 import time
 from pathlib import Path
 
@@ -17,7 +16,9 @@ from src.features.macro_features import (
     build_macro_dataframe,
     calculate_macro_score,
     resample_high_freq_to_monthly,
+    resample_high_freq_to_monthly_legacy,
     resample_to_monthly,
+    resample_to_monthly_legacy,
 )
 from src.features.transforms import rolling_z_score, sigmoid, to_month_end
 from src.utils.database import Database
@@ -71,6 +72,26 @@ def classify_regimes_vectorized(df: pd.DataFrame) -> pd.Series:
     return pd.Series(result, index=df.index)
 
 
+def build_classified_macro_frame(
+    gdp: pd.Series,
+    cpi: pd.Series,
+    yield_10y: pd.Series,
+    yield_3m: pd.Series,
+    m2: pd.Series,
+    velocity: pd.Series,
+    hf_monthly: dict[str, pd.Series] | None,
+) -> pd.DataFrame:
+    """Full macro pipeline through discrete regime labels."""
+    df_feat = build_macro_dataframe(
+        gdp, cpi, yield_10y, yield_3m, m2, velocity, hf_monthly=hf_monthly,
+    )
+    df_feat = add_z_scores(df_feat)
+    df_feat = calculate_macro_score(df_feat)
+    out = df_feat.copy()
+    out["regime"] = classify_regimes_vectorized(out)
+    return out
+
+
 class RegimeClassifier:
     """Orchestrates data fetch, feature engineering, and regime classification."""
 
@@ -84,6 +105,7 @@ class RegimeClassifier:
         self.api_key = api_key
         self.fred = Fred(api_key=api_key)
         self.end_date = get_end_date()
+        self._legacy_label_df: pd.DataFrame | None = None
 
     def build_dataframe(
         self,
@@ -149,35 +171,41 @@ class RegimeClassifier:
             hf_raw = fetch_fred_optional(self.api_key, end_date=end_date)
         timings["fred_retrieval"] = time.perf_counter() - t0
 
-        # --- Merge / resample ---
+        # --- Publication-lag-aware + legacy pipelines (comparison) -------------
         t0 = time.perf_counter()
-        hf_monthly = resample_high_freq_to_monthly(hf_raw) if hf_raw else None
-        gdp, cpi, yield_10y, yield_3m, m2, velocity = resample_to_monthly(
+        hf_monthly_legacy = (
+            resample_high_freq_to_monthly_legacy(hf_raw) if hf_raw else None
+        )
+        gdp_l, cpi_l, y10_l, y3_l, m2_l, vel_l = resample_to_monthly_legacy(
             gdp, cpi, yield_10y, yield_3m, m2, velocity
         )
-        timings["merge_resample"] = time.perf_counter() - t0
-
-        # --- Feature calculation ---
-        t0 = time.perf_counter()
-        df = build_macro_dataframe(
-            gdp, cpi, yield_10y, yield_3m, m2, velocity, hf_monthly=hf_monthly
+        df_legacy = build_classified_macro_frame(
+            gdp_l, cpi_l, y10_l, y3_l, m2_l, vel_l, hf_monthly_legacy,
         )
-        df = add_z_scores(df)
-        df = calculate_macro_score(df)
-        timings["feature_calculation"] = time.perf_counter() - t0
+        timings["legacy_pipeline"] = time.perf_counter() - t0
 
-        # --- Regime labeling ---
         t0 = time.perf_counter()
-        df["regime"] = classify_regimes_vectorized(df)
-        timings["regime_labeling"] = time.perf_counter() - t0
+        hf_monthly = resample_high_freq_to_monthly(hf_raw) if hf_raw else None
+        gdp_a, cpi_a, y10_a, y3_a, m2_a, vel_a = resample_to_monthly(
+            gdp, cpi, yield_10y, yield_3m, m2, velocity
+        )
+        timings["merge_resample_asof"] = time.perf_counter() - t0
+
+        t0 = time.perf_counter()
+        df = build_classified_macro_frame(
+            gdp_a, cpi_a, y10_a, y3_a, m2_a, vel_a, hf_monthly,
+        )
+        timings["feature_asof"] = time.perf_counter() - t0
+
+        self._legacy_label_df = df_legacy
 
         elapsed = time.perf_counter() - t_total
         logger.info(
-            "[REGIME] Sub-step timing: fred=%.2fs merge=%.2fs features=%.2fs label=%.2fs total=%.2fs",
+            "[REGIME] Sub-step timing: fred=%.2fs legacy=%.2fs merge_asof=%.2fs feats_asof=%.2fs total=%.2fs",
             timings["fred_retrieval"],
-            timings["merge_resample"],
-            timings["feature_calculation"],
-            timings["regime_labeling"],
+            timings["legacy_pipeline"],
+            timings["merge_resample_asof"],
+            timings["feature_asof"],
             elapsed,
         )
         return df
@@ -211,15 +239,66 @@ class RegimeClassifier:
 
         out_dir.mkdir(exist_ok=True)
         save_path = out_dir / "regime_labels_expanded.csv"
+        asof_path = out_dir / "regime_labels_asof.csv"
 
-        def _write_csv() -> None:
+        legacy_df = getattr(self, "_legacy_label_df", None)
+
+        def _write_expanded() -> None:
             regime_df.to_csv(save_path, index=False)
             logger.info("Saved CSV backup: %s", save_path)
 
         try:
-            retry_on_permission_error(_write_csv, logger=logger)
+            retry_on_permission_error(_write_expanded, logger=logger)
         except PermissionError:
             logger.warning("Could not save CSV backup; data is in database.")
+
+        try:
+            regime_df.to_csv(asof_path, index=False)
+            logger.info("Saved asof-aware CSV: %s", asof_path)
+        except PermissionError:
+            logger.warning("Could not save regime_labels_asof.csv.")
+
+        if legacy_df is not None and len(legacy_df):
+            lg = legacy_df.reset_index().rename(columns={"index": "date"})[["date", "regime"]]
+            lg = lg.rename(columns={"regime": "regime_legacy"})
+            ag = regime_df[["date", "regime"]].rename(columns={"regime": "regime_asof"})
+            flip_df = lg.merge(ag, on="date", how="outer").sort_values("date")
+            flip_df["flipped"] = (
+                flip_df["regime_legacy"].notna()
+                & flip_df["regime_asof"].notna()
+                & (flip_df["regime_legacy"].astype(str) != flip_df["regime_asof"].astype(str))
+            ).astype(int)
+            flip_path = out_dir / "regime_label_flip_report.csv"
+            flip_df.to_csv(flip_path, index=False)
+            logger.info("Saved regime flip report: %s", flip_path)
+
+            mask = flip_df["regime_legacy"].notna() & flip_df["regime_asof"].notna()
+            sub = flip_df.loc[mask]
+            n_flip = int((sub["regime_legacy"].astype(str) != sub["regime_asof"].astype(str)).sum())
+            n_tot = int(mask.sum())
+            pct = (n_flip / max(n_tot, 1)) * 100
+
+            confusion = pd.crosstab(
+                sub["regime_legacy"].astype(str),
+                sub["regime_asof"].astype(str),
+                rownames=["legacy"],
+                colnames=["asof"],
+            )
+            confusion_path = out_dir / "regime_label_flip_confusion.csv"
+            confusion.to_csv(confusion_path)
+
+            summary_path = out_dir / "regime_label_flip_summary.txt"
+            lines = [
+                "Regime label migration (legacy lookahead resample vs publication-lag asof)",
+                f"Comparable rows (both non-null): {n_tot}",
+                f"Rows with different regime label: {n_flip} ({pct:.2f}%)",
+                "",
+                "Confusion matrix (legacy rows, asof columns):",
+                confusion.to_string(),
+                "",
+            ]
+            summary_path.write_text("\n".join(lines), encoding="utf-8")
+            logger.info("Saved regime flip summary: %s", summary_path)
 
     def _log_recent(self, df: pd.DataFrame) -> None:
         """Log recent regime classifications."""
@@ -276,10 +355,12 @@ def run_parity_check(df: pd.DataFrame) -> tuple[bool, dict]:
 def main() -> None:
     """Entry point for regime classification."""
     load_dotenv()
-    api_key = os.getenv("FRED_API_KEY")
+    from src.utils.fred_key import get_fred_api_key
+
+    api_key = get_fred_api_key()
     if not api_key:
         raise ValueError(
-            "FRED_API_KEY not found. Create .env with FRED_API_KEY=your_key"
+            "FRED API key not found. Set FRED_API_KEY or FRED_API_KEY_FILE in the environment."
         )
     classifier = RegimeClassifier(api_key)
     classifier.run()
