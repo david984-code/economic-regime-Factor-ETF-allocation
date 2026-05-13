@@ -117,12 +117,6 @@ class TestBuildSmsBody:
             )
         """)
         conn.execute("""
-            CREATE TABLE current_weights (
-                date TEXT, asset TEXT, weight REAL, created_at TIMESTAMP,
-                PRIMARY KEY (date, asset)
-            )
-        """)
-        conn.execute("""
             CREATE TABLE regime_forecast (
                 forecast_date TEXT, target_month TEXT, risk_on_forecast REAL,
                 regime_forecast TEXT, accuracy_1m REAL, created_at TIMESTAMP,

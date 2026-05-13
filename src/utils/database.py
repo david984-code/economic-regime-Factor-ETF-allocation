@@ -55,15 +55,6 @@ class Database:
             )
         """)
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS current_weights (
-                date TEXT NOT NULL,
-                asset TEXT NOT NULL,
-                weight REAL NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (date, asset)
-            )
-        """)
-        cursor.execute("""
             CREATE TABLE IF NOT EXISTS regime_forecast (
                 forecast_date TEXT NOT NULL,
                 target_month TEXT NOT NULL,
@@ -136,15 +127,6 @@ class Database:
             regime_df = df[df["regime"] == regime]
             allocations[regime] = dict(zip(regime_df["asset"], regime_df["weight"]))
         return allocations
-
-    def save_current_weights(self, date: str, weights: pd.Series) -> None:
-        """Save current portfolio weights."""
-        cursor = self.conn.cursor()
-        cursor.execute("DELETE FROM current_weights WHERE date = ?", (date,))
-        self.conn.commit()
-        df = pd.DataFrame({"date": date, "asset": weights.index, "weight": weights.values})
-        df.to_sql("current_weights", self.conn, if_exists="append", index=False)
-        self.conn.commit()
 
     def save_regime_forecast(
         self,

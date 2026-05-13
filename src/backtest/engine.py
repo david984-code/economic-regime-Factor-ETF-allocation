@@ -1574,7 +1574,6 @@ def run_backtest(pipeline_data: "PipelineData | None" = None) -> dict[str, Any]:
     trailing_pd = returns[TICKERS].loc[:asof].tail(VOL_LOOKBACK)
     trailing_pl = pl.from_pandas(trailing_pd)
     scaled_weights = vol_scaled_weights(base_weights, trailing_pl, list(TICKERS))
-    db.save_current_weights(str(asof.date()), pd.Series(scaled_weights))
     db.close()
 
     return {
