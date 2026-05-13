@@ -10,12 +10,14 @@ from scipy.optimize import minimize
 from src.config import (
     DEFAULT_MAX_CASH,
     DEFAULT_MIN_CASH,
+    OPTIMIZER_CASH_PREFERENCE,
     OUTPUTS_DIR,
     REGIME_CASH,
     REGIME_MAX_ASSETS,
     REGIME_MAX_RISK_ON,
     REGIME_MIN_ASSETS,
     REGIME_MIN_RISK_ON,
+    RF_MONTHLY,
     RISK_ON_ASSETS_BASE,
     get_end_date,
 )
@@ -48,9 +50,10 @@ def load_regimes() -> pd.DataFrame:
 def _negative_sortino(
     weights: np.ndarray,
     returns_risky: np.ndarray,
-    risk_free: float = 0.0,
+    risk_free: float | None = None,
 ) -> float:
     """Negative Sortino (return / downside vol) for minimization."""
+    rf = RF_MONTHLY if risk_free is None else risk_free
     risky_weights = np.asarray(weights[:-1], dtype=float)
     cash_weight = float(weights[-1])
     risky_sum = risky_weights.sum()
@@ -59,13 +62,13 @@ def _negative_sortino(
     w = risky_weights / risky_sum
     port_rets = returns_risky @ w
     mean_ret = float(np.mean(port_rets))
-    downside_rets = np.minimum(port_rets - risk_free, 0.0)
+    downside_rets = np.minimum(port_rets - rf, 0.0)
     downside_var = float(np.mean(downside_rets**2))
     downside_vol = np.sqrt(downside_var) if downside_var > 1e-12 else 1e-8
-    sortino = (mean_ret - risk_free) / downside_vol
+    sortino = (mean_ret - rf) / downside_vol
     if not np.isfinite(sortino):
         return 1e9
-    return float(-sortino + 0.05 * cash_weight)
+    return float(-sortino + OPTIMIZER_CASH_PREFERENCE * cash_weight)
 
 
 def _get_constraints(
@@ -161,8 +164,7 @@ def optimize_allocations_from_data(
     all_assets = [c for c in ret.columns if c != "Period"]
     risky_assets = [a for a in all_assets if a != "cash"]
     if "cash" not in all_assets:
-        cash_monthly = (1.05) ** (1 / 12) - 1
-        ret["cash"] = cash_monthly
+        ret["cash"] = RF_MONTHLY
         all_assets = [c for c in ret.columns if c != "Period"]
         risky_assets = [a for a in all_assets if a != "cash"]
     full_asset_list = risky_assets + ["cash"]
@@ -210,9 +212,11 @@ def run_optimizer(pipeline_data: "PipelineData | None" = None) -> None:
     else:
         returns = fetch_monthly_returns(end=get_end_date())
     if "cash" not in returns.columns:
-        cash_monthly = (1.05) ** (1 / 12) - 1
-        returns["cash"] = cash_monthly
-        logger.warning("Added synthetic cash column (~5%% annualized)")
+        returns["cash"] = RF_MONTHLY
+        logger.warning(
+            "Added synthetic cash column (annualized rf=%.4f)",
+            RF_MONTHLY * 12,
+        )
 
     returns["Period"] = returns.index.to_period("M")
     regimes = load_regimes()

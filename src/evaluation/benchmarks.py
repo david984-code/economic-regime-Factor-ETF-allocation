@@ -3,9 +3,9 @@
 import numpy as np
 import pandas as pd
 
-from src.config import RISK_ON_REGIMES, TICKERS
+from src.config import RF_DAILY, RISK_ON_REGIMES, TICKERS
 
-CASH_DAILY_YIELD = (1.045) ** (1 / 252) - 1
+CASH_DAILY_YIELD = RF_DAILY
 
 
 def compute_benchmark_returns(

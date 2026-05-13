@@ -21,6 +21,14 @@ def get_end_date() -> str:
     return datetime.today().strftime("%Y-%m-%d")
 
 
+# --- Risk-free (single source of truth for Sharpe/Sortino and synthetic cash) ---
+RF_ANNUAL = 0.045
+RF_DAILY = float((1.0 + RF_ANNUAL) ** (1.0 / 252.0) - 1.0)
+RF_MONTHLY = float((1.0 + RF_ANNUAL) ** (1.0 / 12.0) - 1.0)
+# Separate from RF: softness term in optimizer objective (-Sortino + k*cash_weight)
+OPTIMIZER_CASH_PREFERENCE = 0.05
+
+
 # --- Asset universe ---
 TICKERS = [
     "SPY",
@@ -80,6 +88,8 @@ REGIME_CASH: dict[str, tuple[float, float]] = {
     "Recovery": (0.05, 0.10),
     "Overheating": (0.05, 0.12),
     "Stagflation": (0.10, 0.20),
+    # TODO(walk-forward): Contraction bounds are undocumented heuristic; an in-sample screen
+    # suggested revisiting minimum cash — do NOT change without WF validation vs baseline.
     "Contraction": (0.15, 0.30),
     "Unknown": (0.10, 0.20),
 }

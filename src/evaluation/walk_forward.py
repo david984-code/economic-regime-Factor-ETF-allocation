@@ -10,7 +10,7 @@ import pandas as pd
 from src.allocation.optimizer import optimize_allocations_from_data
 from src.backtest.engine import run_backtest_with_allocations
 from src.backtest.metrics import compute_metrics, compute_turnover
-from src.config import OUTPUTS_DIR, TICKERS, get_end_date
+from src.config import OUTPUTS_DIR, RF_MONTHLY, TICKERS, get_end_date
 from src.data.market_ingestion import fetch_prices
 from src.evaluation.benchmarks import CASH_DAILY_YIELD, compute_benchmark_returns
 from src.utils.cache import get_cached, set_cached
@@ -113,6 +113,16 @@ def run_walk_forward_evaluation(
     vol_regime_weight: float = 0.0,
     quarterly_rebalance: bool = False,
     tolerance: float = 0.0,
+    sigmoid_scale: float = 0.25,
+    rf_sleeve_cap: float = 0.0,
+    momentum_6m_weight: float = 0.0,
+    breadth_weight: float = 0.0,
+    vol_zscore_weight: float = 0.0,
+    yield_curve_weight: float = 0.0,
+    inversion_flag_offset: float = 0.0,
+    breadth_flag_offset: float = 0.0,
+    vol_target_annual: float = 0.0,
+    use_post_blend_inv_vol: bool = True,
 ) -> pd.DataFrame:
     """Run walk-forward evaluation and save results.
 
@@ -171,6 +181,21 @@ def run_walk_forward_evaluation(
             prices = fetch_prices(tickers=tickers_to_use, start=start, end=end)
     else:
         prices = fetch_prices(tickers=tickers_to_use, start=start, end=end)
+
+    # Fetch sector-breadth prices if needed (separate from allocation universe)
+    _breadth_prices: pd.DataFrame | None = None
+    if breadth_weight > 0.0 or breadth_flag_offset > 0.0:
+        _sector_etfs = ["XLB", "XLE", "XLF", "XLI", "XLK", "XLP", "XLU", "XLV", "XLY"]
+        _breadth_prices = fetch_prices(tickers=_sector_etfs, start=start, end=end)
+
+    # Fetch 10Y-3M Treasury term spread if needed (^TNX minus ^IRX via yfinance)
+    _yield_curve_data: pd.Series | None = None
+    if yield_curve_weight > 0.0 or inversion_flag_offset > 0.0:
+        import yfinance as yf
+        _yc_raw = yf.download(["^TNX", "^IRX"], start=start, progress=False)
+        _tnx = _yc_raw["Close"]["^TNX"]
+        _irx = _yc_raw["Close"]["^IRX"]
+        _yield_curve_data = (_tnx - _irx).resample("ME").last().dropna()
     
     # Load regime labels (with caching)
     if timing:
@@ -230,14 +255,14 @@ def run_walk_forward_evaluation(
                 train_returns = prices.resample("ME").last().pct_change().dropna()
                 train_returns = train_returns.loc[train_start:train_end]
                 if "cash" not in train_returns.columns:
-                    train_returns["cash"] = (1.05) ** (1 / 12) - 1
+                    train_returns["cash"] = RF_MONTHLY
                 train_regimes = regime_df.loc[:train_end].resample("ME").last().dropna(how="all")
                 train_regimes = train_regimes.loc[train_regimes.index <= train_end]
         else:
             train_returns = prices.resample("ME").last().pct_change().dropna()
             train_returns = train_returns.loc[train_start:train_end]
             if "cash" not in train_returns.columns:
-                train_returns["cash"] = (1.05) ** (1 / 12) - 1
+                train_returns["cash"] = RF_MONTHLY
             train_regimes = regime_df.loc[:train_end].resample("ME").last().dropna(how="all")
             train_regimes = train_regimes.loc[train_regimes.index <= train_end]
 
@@ -301,6 +326,18 @@ def run_walk_forward_evaluation(
                     vol_regime_weight=vol_regime_weight,
                     quarterly_rebalance=quarterly_rebalance,
                     tolerance=tolerance,
+                    sigmoid_scale=sigmoid_scale,
+                    rf_sleeve_cap=rf_sleeve_cap,
+                    momentum_6m_weight=momentum_6m_weight,
+                    breadth_weight=breadth_weight,
+                    breadth_prices=_breadth_prices,
+                    vol_zscore_weight=vol_zscore_weight,
+                    yield_curve_weight=yield_curve_weight,
+                    yield_curve_data=_yield_curve_data,
+                    inversion_flag_offset=inversion_flag_offset,
+                    breadth_flag_offset=breadth_flag_offset,
+                    vol_target_annual=vol_target_annual,
+                    use_post_blend_inv_vol=use_post_blend_inv_vol,
                 )
         else:
             result = run_backtest_with_allocations(
@@ -328,10 +365,22 @@ def run_walk_forward_evaluation(
                 vol_regime_weight=vol_regime_weight,
                 quarterly_rebalance=quarterly_rebalance,
                 tolerance=tolerance,
+                sigmoid_scale=sigmoid_scale,
+                rf_sleeve_cap=rf_sleeve_cap,
+                momentum_6m_weight=momentum_6m_weight,
+                breadth_weight=breadth_weight,
+                breadth_prices=_breadth_prices,
+                vol_zscore_weight=vol_zscore_weight,
+                yield_curve_weight=yield_curve_weight,
+                yield_curve_data=_yield_curve_data,
+                inversion_flag_offset=inversion_flag_offset,
+                breadth_flag_offset=breadth_flag_offset,
+                vol_target_annual=vol_target_annual,
+                use_post_blend_inv_vol=use_post_blend_inv_vol,
             )
         
         if isinstance(result, tuple):
-            strat_rets, strat_weights = result
+            strat_rets, strat_weights = result[0], result[1]
         else:
             strat_rets = result
             strat_weights = None
@@ -472,6 +521,9 @@ def run_walk_forward_evaluation(
                     "momentum_12m_weight": momentum_12m_weight,
                     "quarterly_rebalance": quarterly_rebalance,
                     "tolerance": tolerance,
+                    "sigmoid_scale": sigmoid_scale,
+                    "rf_sleeve_cap": rf_sleeve_cap,
+                    "use_post_blend_inv_vol": use_post_blend_inv_vol,
                 },
                 str(run_csv_path),
             )

@@ -13,6 +13,7 @@ from src.config import (
     ASSETS,
     COST_BPS,
     REGIME_ALIASES,
+    RF_DAILY,
     RISK_OFF_REGIMES,
     RISK_ON_REGIMES,
     TICKERS,
@@ -28,7 +29,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-CASH_DAILY_YIELD = (1.045) ** (1 / 252) - 1
+CASH_DAILY_YIELD = RF_DAILY
 
 
 def _avg_alloc(
