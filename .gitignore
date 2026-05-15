@@ -2,7 +2,6 @@
 venv/
 __pycache__/
 *.pyc
-.env
 .vscode/
 .ipynb_checkpoints/
 
@@ -34,3 +33,35 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# ---- SECRETS: never commit any of these --------------------------------
+# Environment / credential files
+.env
+.env.*
+!.env.example
+*.env
+
+# IBC / IBKR credential configs (also outside repo, but belt-and-suspenders)
+config.ini
+ibcconfig.ini
+*credentials*
+*password*
+*secret*
+*apikey*
+*api_key*
+secrets/
+
+# Private key files
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+
+# Any accidental credential dumps
+secrets.json
+secrets.yaml
+secrets.yml
+credentials.json
+credentials.yaml
