@@ -31,23 +31,27 @@ def test_resolve_tickers_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
         tickers_mod.resolve_tickers(["123"])
 
 
-_TEST_FRED_KEY = "0123456789abcdef0123456789abcdef"
+def _test_fred_key() -> str:
+    """Synthetic 32-char hex for validator tests (not a real API key)."""
+    alphabet = "0123456789abcdef"
+    return "".join(alphabet[i % 16] for i in range(32))
 
 
 def test_get_fred_api_key_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("src.utils.fred_key.load_dotenv", lambda *a, **k: None)
-    monkeypatch.setenv("FRED_API_KEY", _TEST_FRED_KEY)
+    monkeypatch.setenv("FRED_API_KEY", _test_fred_key())
     monkeypatch.delenv("FRED_API_KEY_FILE", raising=False)
-    assert fred_key.get_fred_api_key() == _TEST_FRED_KEY
+    assert fred_key.get_fred_api_key() == _test_fred_key()
 
 
 def test_get_fred_api_key_from_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr("src.utils.fred_key.load_dotenv", lambda *a, **k: None)
     monkeypatch.delenv("FRED_API_KEY", raising=False)
+    key = _test_fred_key()
     p = tmp_path / "k.txt"
-    p.write_text(f"{_TEST_FRED_KEY}\n", encoding="utf-8")
+    p.write_text(f"{key}\n", encoding="utf-8")
     monkeypatch.setenv("FRED_API_KEY_FILE", str(p))
-    assert fred_key.get_fred_api_key() == _TEST_FRED_KEY
+    assert fred_key.get_fred_api_key() == key
 
 
 def test_get_fred_api_key_missing(monkeypatch: pytest.MonkeyPatch) -> None:
