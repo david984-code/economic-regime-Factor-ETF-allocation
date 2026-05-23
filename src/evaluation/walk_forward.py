@@ -79,6 +79,523 @@ def _metrics_row(
     return row
 
 
+def _stitch_non_overlapping_oos_returns(
+    parts: list[tuple[pd.Timestamp, pd.Timestamp, pd.Series]],
+) -> pd.Series:
+    """Concatenate segment OOS daily returns without double-counting dates.
+
+    Rolling walk-forward segments overlap in calendar coverage; each date is
+    kept only on its first OOS appearance (earliest segment that includes it).
+    """
+    seen: set[pd.Timestamp] = set()
+    chunks: list[pd.Series] = []
+    for test_start, test_end, rets in parts:
+        window = rets.loc[test_start:test_end].dropna()
+        novel = window[~window.index.isin(seen)]
+        if not novel.empty:
+            chunks.append(novel)
+            seen.update(novel.index)
+    if not chunks:
+        return pd.Series(dtype=float)
+    out = pd.concat(chunks).sort_index()
+    if out.index.duplicated().any():
+        raise ValueError("Duplicate dates remain after OOS stitch.")
+    return out
+
+
+def _run_backtest_segment(
+    prices: pd.DataFrame,
+    regime_df: pd.DataFrame,
+    allocations: dict,
+    *,
+    timing: TimingReport | None,
+    tickers_to_use: list[str],
+    assets_to_use: list[str],
+    use_stagflation_override: bool,
+    use_stagflation_risk_on_cap: bool,
+    stagflation_risk_on_cap: float,
+    use_regime_smoothing: bool,
+    regime_smoothing_window: int,
+    use_hybrid_signal: bool,
+    hybrid_macro_weight: float,
+    market_lookback_months: int,
+    use_momentum: bool,
+    trend_filter_type: str,
+    trend_filter_risk_on_cap: float,
+    vol_scaling_method: str,
+    portfolio_construction_method: str,
+    momentum_12m_weight: float,
+    risk_on_sleeve: list[str] | None,
+    risk_off_sleeve: list[str] | None,
+    use_vol_regime: bool,
+    vol_regime_weight: float,
+    quarterly_rebalance: bool,
+    tolerance: float,
+    sigmoid_scale: float,
+    rf_sleeve_cap: float,
+    momentum_6m_weight: float,
+    breadth_weight: float,
+    breadth_prices: pd.DataFrame | None,
+    vol_zscore_weight: float,
+    yield_curve_weight: float,
+    yield_curve_data: pd.Series | None,
+    inversion_flag_offset: float,
+    breadth_flag_offset: float,
+    vol_target_annual: float,
+    use_post_blend_inv_vol: bool,
+):
+    kwargs = dict(
+        prices=prices,
+        regime_df=regime_df,
+        allocations=allocations,
+        return_weights=True,
+        use_stagflation_override=use_stagflation_override,
+        use_stagflation_risk_on_cap=use_stagflation_risk_on_cap,
+        stagflation_risk_on_cap=stagflation_risk_on_cap,
+        use_regime_smoothing=use_regime_smoothing,
+        regime_smoothing_window=regime_smoothing_window,
+        use_hybrid_signal=use_hybrid_signal,
+        hybrid_macro_weight=hybrid_macro_weight,
+        market_lookback_months=market_lookback_months,
+        use_momentum=use_momentum,
+        trend_filter_type=trend_filter_type,
+        trend_filter_risk_on_cap=trend_filter_risk_on_cap,
+        vol_scaling_method=vol_scaling_method,
+        portfolio_construction_method=portfolio_construction_method,
+        momentum_12m_weight=momentum_12m_weight,
+        tickers=tickers_to_use,
+        assets=assets_to_use,
+        risk_on_sleeve=risk_on_sleeve,
+        risk_off_sleeve=risk_off_sleeve,
+        use_vol_regime=use_vol_regime,
+        vol_regime_weight=vol_regime_weight,
+        quarterly_rebalance=quarterly_rebalance,
+        tolerance=tolerance,
+        sigmoid_scale=sigmoid_scale,
+        rf_sleeve_cap=rf_sleeve_cap,
+        momentum_6m_weight=momentum_6m_weight,
+        breadth_weight=breadth_weight,
+        breadth_prices=breadth_prices,
+        vol_zscore_weight=vol_zscore_weight,
+        yield_curve_weight=yield_curve_weight,
+        yield_curve_data=yield_curve_data,
+        inversion_flag_offset=inversion_flag_offset,
+        breadth_flag_offset=breadth_flag_offset,
+        vol_target_annual=vol_target_annual,
+        use_post_blend_inv_vol=use_post_blend_inv_vol,
+    )
+    if timing:
+        with timing.time("segment_backtest"):
+            return run_backtest_with_allocations(**kwargs)
+    return run_backtest_with_allocations(**kwargs)
+
+
+def _run_walk_forward_segment_loop(
+    *,
+    start: str | None,
+    end: str | None,
+    min_train_months: int,
+    test_months: int,
+    expanding: bool,
+    use_stagflation_override: bool,
+    use_stagflation_risk_on_cap: bool,
+    stagflation_risk_on_cap: float,
+    use_regime_smoothing: bool,
+    regime_smoothing_window: int,
+    use_hybrid_signal: bool,
+    hybrid_macro_weight: float,
+    market_lookback_months: int,
+    use_momentum: bool,
+    trend_filter_type: str,
+    trend_filter_risk_on_cap: float,
+    vol_scaling_method: str,
+    portfolio_construction_method: str,
+    momentum_12m_weight: float,
+    fast_mode: bool,
+    max_segments: int | None,
+    use_cache: bool,
+    show_timing: bool,
+    tickers: list[str] | None,
+    assets: list[str] | None,
+    risk_on_sleeve: list[str] | None,
+    risk_off_sleeve: list[str] | None,
+    use_vol_regime: bool,
+    vol_regime_weight: float,
+    quarterly_rebalance: bool,
+    tolerance: float,
+    sigmoid_scale: float,
+    rf_sleeve_cap: float,
+    momentum_6m_weight: float,
+    breadth_weight: float,
+    vol_zscore_weight: float,
+    yield_curve_weight: float,
+    inversion_flag_offset: float,
+    breadth_flag_offset: float,
+    vol_target_annual: float,
+    use_post_blend_inv_vol: bool,
+    collect_oos: bool = True,
+    collect_metrics_rows: bool = True,
+) -> tuple[
+    list[tuple[pd.Timestamp, pd.Timestamp, pd.Series]],
+    list[dict],
+    str,
+    str,
+]:
+    """Run walk-forward segments; return OOS parts, metric rows, resolved start/end."""
+    from src.config import ASSETS, START_DATE, TICKERS
+
+    timing = TimingReport() if show_timing else None
+
+    resolved_start = start or START_DATE
+    resolved_end = end or get_end_date()
+    if fast_mode and resolved_start == START_DATE:
+        resolved_start = (
+            pd.Timestamp(resolved_end) - pd.DateOffset(years=8)
+        ).strftime("%Y-%m-%d")
+        logger.info(
+            "[FAST MODE] Using recent data only: %s to %s",
+            resolved_start,
+            resolved_end,
+        )
+
+    logger.info(
+        "Walk-forward: %s to %s, train>=%dmo, test=%dmo, %s",
+        resolved_start,
+        resolved_end,
+        min_train_months,
+        test_months,
+        "expanding" if expanding else "rolling",
+    )
+
+    tickers_to_use = tickers if tickers is not None else TICKERS
+    assets_to_use = assets if assets is not None else ASSETS
+
+    if timing:
+        with timing.time("fetch_prices"):
+            prices = fetch_prices(
+                tickers=tickers_to_use, start=resolved_start, end=resolved_end
+            )
+    else:
+        prices = fetch_prices(
+            tickers=tickers_to_use, start=resolved_start, end=resolved_end
+        )
+
+    breadth_prices: pd.DataFrame | None = None
+    if breadth_weight > 0.0 or breadth_flag_offset > 0.0:
+        sector_etfs = ["XLB", "XLE", "XLF", "XLI", "XLK", "XLP", "XLU", "XLV", "XLY"]
+        breadth_prices = fetch_prices(
+            tickers=sector_etfs, start=resolved_start, end=resolved_end
+        )
+
+    yield_curve_data: pd.Series | None = None
+    if yield_curve_weight > 0.0 or inversion_flag_offset > 0.0:
+        import yfinance as yf
+
+        yc_raw = yf.download(["^TNX", "^IRX"], start=resolved_start, progress=False)
+        tnx = yc_raw["Close"]["^TNX"]
+        irx = yc_raw["Close"]["^IRX"]
+        yield_curve_data = (tnx - irx).resample("ME").last().dropna()
+
+    if timing:
+        with timing.time("load_regime_labels"):
+            csv_path = OUTPUTS_DIR / "regime_labels_expanded.csv"
+            if csv_path.exists():
+                regime_df = pd.read_csv(
+                    csv_path, parse_dates=["date"], index_col="date"
+                )
+            else:
+                from src.allocation.optimizer import load_regimes
+
+                regime_df = load_regimes()
+            regime_df = regime_df.dropna(subset=["regime"]).sort_index()
+            if regime_df.index.duplicated().any():
+                regime_df = regime_df[~regime_df.index.duplicated(keep="last")]
+            regime_df = regime_df.reindex(prices.index).ffill()
+    else:
+        csv_path = OUTPUTS_DIR / "regime_labels_expanded.csv"
+        if csv_path.exists():
+            regime_df = pd.read_csv(csv_path, parse_dates=["date"], index_col="date")
+        else:
+            from src.allocation.optimizer import load_regimes
+
+            regime_df = load_regimes()
+        regime_df = regime_df.dropna(subset=["regime"]).sort_index()
+        if regime_df.index.duplicated().any():
+            regime_df = regime_df[~regime_df.index.duplicated(keep="last")]
+        regime_df = regime_df.reindex(prices.index).ffill()
+
+    returns_daily = prices[tickers_to_use].pct_change().iloc[1:]
+    returns_daily["cash"] = CASH_DAILY_YIELD
+
+    segments = _make_segments(
+        resolved_start, resolved_end, min_train_months, test_months, expanding
+    )
+    if not segments:
+        logger.warning("No segments generated. Need more history.")
+        if timing:
+            timing.log_summary()
+        return [], [], resolved_start, resolved_end
+
+    if max_segments and len(segments) > max_segments:
+        logger.info(
+            "[FAST MODE] Limiting segments from %d to %d",
+            len(segments),
+            max_segments,
+        )
+        segments = segments[-max_segments:]
+
+    logger.info("Generated %d segments", len(segments))
+
+    if timing:
+        with timing.time("compute_benchmarks"):
+            benchmarks = compute_benchmark_returns(returns_daily, regime_df)
+    else:
+        benchmarks = compute_benchmark_returns(returns_daily, regime_df)
+
+    oos_parts: list[tuple[pd.Timestamp, pd.Timestamp, pd.Series]] = []
+    rows: list[dict] = []
+
+    for seg_idx, (train_start, train_end, test_start, test_end) in enumerate(segments):
+        if timing:
+            with timing.time("segment_train_data_prep"):
+                train_returns = prices.resample("ME").last().pct_change().dropna()
+                train_returns = train_returns.loc[train_start:train_end]
+                if "cash" not in train_returns.columns:
+                    train_returns["cash"] = RF_MONTHLY
+                train_regimes = regime_df.loc[:train_end].resample("ME").last().dropna(
+                    how="all"
+                )
+                train_regimes = train_regimes.loc[train_regimes.index <= train_end]
+        else:
+            train_returns = prices.resample("ME").last().pct_change().dropna()
+            train_returns = train_returns.loc[train_start:train_end]
+            if "cash" not in train_returns.columns:
+                train_returns["cash"] = RF_MONTHLY
+            train_regimes = regime_df.loc[:train_end].resample("ME").last().dropna(
+                how="all"
+            )
+            train_regimes = train_regimes.loc[train_regimes.index <= train_end]
+
+        if len(train_returns) < 24 or len(train_regimes) < 12:
+            continue
+
+        if use_cache:
+            opt_params = {
+                "train_start": train_start.isoformat(),
+                "train_end": train_end.isoformat(),
+                "portfolio_method": portfolio_construction_method,
+            }
+            allocations = get_cached("allocations", opt_params)
+            if allocations is None:
+                if timing:
+                    with timing.time("segment_optimization"):
+                        allocations = optimize_allocations_from_data(
+                            train_returns, train_regimes
+                        )
+                        set_cached("allocations", opt_params, allocations)
+                else:
+                    allocations = optimize_allocations_from_data(
+                        train_returns, train_regimes
+                    )
+                    set_cached("allocations", opt_params, allocations)
+            elif timing:
+                timing.add("segment_optimization_cached", 0)
+        else:
+            if timing:
+                with timing.time("segment_optimization"):
+                    allocations = optimize_allocations_from_data(
+                        train_returns, train_regimes
+                    )
+            else:
+                allocations = optimize_allocations_from_data(train_returns, train_regimes)
+
+        if not allocations:
+            continue
+
+        result = _run_backtest_segment(
+            prices,
+            regime_df,
+            allocations,
+            timing=timing,
+            tickers_to_use=tickers_to_use,
+            assets_to_use=assets_to_use,
+            use_stagflation_override=use_stagflation_override,
+            use_stagflation_risk_on_cap=use_stagflation_risk_on_cap,
+            stagflation_risk_on_cap=stagflation_risk_on_cap,
+            use_regime_smoothing=use_regime_smoothing,
+            regime_smoothing_window=regime_smoothing_window,
+            use_hybrid_signal=use_hybrid_signal,
+            hybrid_macro_weight=hybrid_macro_weight,
+            market_lookback_months=market_lookback_months,
+            use_momentum=use_momentum,
+            trend_filter_type=trend_filter_type,
+            trend_filter_risk_on_cap=trend_filter_risk_on_cap,
+            vol_scaling_method=vol_scaling_method,
+            portfolio_construction_method=portfolio_construction_method,
+            momentum_12m_weight=momentum_12m_weight,
+            risk_on_sleeve=risk_on_sleeve,
+            risk_off_sleeve=risk_off_sleeve,
+            use_vol_regime=use_vol_regime,
+            vol_regime_weight=vol_regime_weight,
+            quarterly_rebalance=quarterly_rebalance,
+            tolerance=tolerance,
+            sigmoid_scale=sigmoid_scale,
+            rf_sleeve_cap=rf_sleeve_cap,
+            momentum_6m_weight=momentum_6m_weight,
+            breadth_weight=breadth_weight,
+            breadth_prices=breadth_prices,
+            vol_zscore_weight=vol_zscore_weight,
+            yield_curve_weight=yield_curve_weight,
+            yield_curve_data=yield_curve_data,
+            inversion_flag_offset=inversion_flag_offset,
+            breadth_flag_offset=breadth_flag_offset,
+            vol_target_annual=vol_target_annual,
+            use_post_blend_inv_vol=use_post_blend_inv_vol,
+        )
+
+        if isinstance(result, tuple):
+            strat_rets, strat_weights = result[0], result[1]
+        else:
+            strat_rets = result
+            strat_weights = None
+
+        test_rets = strat_rets.loc[test_start:test_end].dropna()
+        if len(test_rets) < 5:
+            continue
+
+        if collect_oos:
+            oos_parts.append((test_start, test_end, strat_rets))
+
+        if not collect_metrics_rows:
+            continue
+
+        test_bench = {
+            k: v.loc[test_start:test_end].dropna() for k, v in benchmarks.items()
+        }
+        bench_spy = test_bench.get("SPY") if "SPY" in test_bench else None
+        w = strat_weights.loc[test_start:test_end] if strat_weights is not None else None
+        row: dict = {
+            "segment": seg_idx,
+            "train_start": train_start.strftime("%Y-%m"),
+            "train_end": train_end.strftime("%Y-%m"),
+            "test_start": test_start.strftime("%Y-%m"),
+            "test_end": test_end.strftime("%Y-%m"),
+        }
+
+        if timing:
+            with timing.time("segment_metrics"):
+                row.update(
+                    _metrics_row("Strategy", test_rets, bench_rets=bench_spy, weights=w)
+                )
+                for bname, bret in test_bench.items():
+                    row.update(_metrics_row(bname, bret))
+        else:
+            row.update(
+                _metrics_row("Strategy", test_rets, bench_rets=bench_spy, weights=w)
+            )
+            for bname, bret in test_bench.items():
+                row.update(_metrics_row(bname, bret))
+
+        rows.append(row)
+
+    if timing:
+        timing.log_summary()
+
+    return oos_parts, rows, resolved_start, resolved_end
+
+
+def collect_walk_forward_oos_returns(
+    start: str | None = None,
+    end: str | None = None,
+    min_train_months: int = 60,
+    test_months: int = 12,
+    expanding: bool = True,
+    use_stagflation_override: bool = True,
+    use_stagflation_risk_on_cap: bool = False,
+    stagflation_risk_on_cap: float = 0.2,
+    use_regime_smoothing: bool = False,
+    regime_smoothing_window: int = 3,
+    use_hybrid_signal: bool = False,
+    hybrid_macro_weight: float = 0.5,
+    market_lookback_months: int = 12,
+    use_momentum: bool = False,
+    trend_filter_type: str = "none",
+    trend_filter_risk_on_cap: float = 0.3,
+    vol_scaling_method: str = "none",
+    portfolio_construction_method: str = "optimizer",
+    momentum_12m_weight: float = 0.0,
+    fast_mode: bool = False,
+    max_segments: int | None = None,
+    use_cache: bool = False,
+    show_timing: bool = False,
+    tickers: list[str] | None = None,
+    assets: list[str] | None = None,
+    risk_on_sleeve: list[str] | None = None,
+    risk_off_sleeve: list[str] | None = None,
+    use_vol_regime: bool = False,
+    vol_regime_weight: float = 0.0,
+    quarterly_rebalance: bool = False,
+    tolerance: float = 0.0,
+    sigmoid_scale: float = 0.25,
+    rf_sleeve_cap: float = 0.0,
+    momentum_6m_weight: float = 0.0,
+    breadth_weight: float = 0.0,
+    vol_zscore_weight: float = 0.0,
+    yield_curve_weight: float = 0.0,
+    inversion_flag_offset: float = 0.0,
+    breadth_flag_offset: float = 0.0,
+    vol_target_annual: float = 0.0,
+    use_post_blend_inv_vol: bool = True,
+) -> pd.Series:
+    """Return stitched non-overlapping OOS daily strategy returns from walk-forward."""
+    oos_parts, _, _, _ = _run_walk_forward_segment_loop(
+        start=start,
+        end=end,
+        min_train_months=min_train_months,
+        test_months=test_months,
+        expanding=expanding,
+        use_stagflation_override=use_stagflation_override,
+        use_stagflation_risk_on_cap=use_stagflation_risk_on_cap,
+        stagflation_risk_on_cap=stagflation_risk_on_cap,
+        use_regime_smoothing=use_regime_smoothing,
+        regime_smoothing_window=regime_smoothing_window,
+        use_hybrid_signal=use_hybrid_signal,
+        hybrid_macro_weight=hybrid_macro_weight,
+        market_lookback_months=market_lookback_months,
+        use_momentum=use_momentum,
+        trend_filter_type=trend_filter_type,
+        trend_filter_risk_on_cap=trend_filter_risk_on_cap,
+        vol_scaling_method=vol_scaling_method,
+        portfolio_construction_method=portfolio_construction_method,
+        momentum_12m_weight=momentum_12m_weight,
+        fast_mode=fast_mode,
+        max_segments=max_segments,
+        use_cache=use_cache,
+        show_timing=show_timing,
+        tickers=tickers,
+        assets=assets,
+        risk_on_sleeve=risk_on_sleeve,
+        risk_off_sleeve=risk_off_sleeve,
+        use_vol_regime=use_vol_regime,
+        vol_regime_weight=vol_regime_weight,
+        quarterly_rebalance=quarterly_rebalance,
+        tolerance=tolerance,
+        sigmoid_scale=sigmoid_scale,
+        rf_sleeve_cap=rf_sleeve_cap,
+        momentum_6m_weight=momentum_6m_weight,
+        breadth_weight=breadth_weight,
+        vol_zscore_weight=vol_zscore_weight,
+        yield_curve_weight=yield_curve_weight,
+        inversion_flag_offset=inversion_flag_offset,
+        breadth_flag_offset=breadth_flag_offset,
+        vol_target_annual=vol_target_annual,
+        use_post_blend_inv_vol=use_post_blend_inv_vol,
+        collect_oos=True,
+        collect_metrics_rows=False,
+    )
+    return _stitch_non_overlapping_oos_returns(oos_parts)
+
+
 def run_walk_forward_evaluation(
     start: str | None = None,
     end: str | None = None,
@@ -154,264 +671,56 @@ def run_walk_forward_evaluation(
     Returns:
         DataFrame with metrics per segment and overall.
     """
-    from src.config import START_DATE
+    oos_parts, rows, start, end = _run_walk_forward_segment_loop(
+        start=start,
+        end=end,
+        min_train_months=min_train_months,
+        test_months=test_months,
+        expanding=expanding,
+        use_stagflation_override=use_stagflation_override,
+        use_stagflation_risk_on_cap=use_stagflation_risk_on_cap,
+        stagflation_risk_on_cap=stagflation_risk_on_cap,
+        use_regime_smoothing=use_regime_smoothing,
+        regime_smoothing_window=regime_smoothing_window,
+        use_hybrid_signal=use_hybrid_signal,
+        hybrid_macro_weight=hybrid_macro_weight,
+        market_lookback_months=market_lookback_months,
+        use_momentum=use_momentum,
+        trend_filter_type=trend_filter_type,
+        trend_filter_risk_on_cap=trend_filter_risk_on_cap,
+        vol_scaling_method=vol_scaling_method,
+        portfolio_construction_method=portfolio_construction_method,
+        momentum_12m_weight=momentum_12m_weight,
+        fast_mode=fast_mode,
+        max_segments=max_segments,
+        use_cache=use_cache,
+        show_timing=show_timing,
+        tickers=tickers,
+        assets=assets,
+        risk_on_sleeve=risk_on_sleeve,
+        risk_off_sleeve=risk_off_sleeve,
+        use_vol_regime=use_vol_regime,
+        vol_regime_weight=vol_regime_weight,
+        quarterly_rebalance=quarterly_rebalance,
+        tolerance=tolerance,
+        sigmoid_scale=sigmoid_scale,
+        rf_sleeve_cap=rf_sleeve_cap,
+        momentum_6m_weight=momentum_6m_weight,
+        breadth_weight=breadth_weight,
+        vol_zscore_weight=vol_zscore_weight,
+        yield_curve_weight=yield_curve_weight,
+        inversion_flag_offset=inversion_flag_offset,
+        breadth_flag_offset=breadth_flag_offset,
+        vol_target_annual=vol_target_annual,
+        use_post_blend_inv_vol=use_post_blend_inv_vol,
+        collect_oos=True,
+        collect_metrics_rows=True,
+    )
 
-    # Initialize timing report
-    timing = TimingReport() if show_timing else None
-    
-    start = start or START_DATE
-    end = end or get_end_date()
-    
-    # Fast mode: use recent data only
-    if fast_mode and start == START_DATE:
-        start = (pd.Timestamp(end) - pd.DateOffset(years=8)).strftime("%Y-%m-%d")
-        logger.info("[FAST MODE] Using recent data only: %s to %s", start, end)
-
-    logger.info("Walk-forward: %s to %s, train>=%dmo, test=%dmo, %s",
-                start, end, min_train_months, test_months, "expanding" if expanding else "rolling")
-
-    # Use provided universe or defaults
-    from src.config import TICKERS, ASSETS
-    tickers_to_use = tickers if tickers is not None else TICKERS
-    assets_to_use = assets if assets is not None else ASSETS
-    
-    # Fetch prices (with caching)
-    if timing:
-        with timing.time("fetch_prices"):
-            prices = fetch_prices(tickers=tickers_to_use, start=start, end=end)
-    else:
-        prices = fetch_prices(tickers=tickers_to_use, start=start, end=end)
-
-    # Fetch sector-breadth prices if needed (separate from allocation universe)
-    _breadth_prices: pd.DataFrame | None = None
-    if breadth_weight > 0.0 or breadth_flag_offset > 0.0:
-        _sector_etfs = ["XLB", "XLE", "XLF", "XLI", "XLK", "XLP", "XLU", "XLV", "XLY"]
-        _breadth_prices = fetch_prices(tickers=_sector_etfs, start=start, end=end)
-
-    # Fetch 10Y-3M Treasury term spread if needed (^TNX minus ^IRX via yfinance)
-    _yield_curve_data: pd.Series | None = None
-    if yield_curve_weight > 0.0 or inversion_flag_offset > 0.0:
-        import yfinance as yf
-        _yc_raw = yf.download(["^TNX", "^IRX"], start=start, progress=False)
-        _tnx = _yc_raw["Close"]["^TNX"]
-        _irx = _yc_raw["Close"]["^IRX"]
-        _yield_curve_data = (_tnx - _irx).resample("ME").last().dropna()
-    
-    # Load regime labels (with caching)
-    if timing:
-        with timing.time("load_regime_labels"):
-            csv_path = OUTPUTS_DIR / "regime_labels_expanded.csv"
-            if csv_path.exists():
-                regime_df = pd.read_csv(csv_path, parse_dates=["date"], index_col="date")
-            else:
-                from src.allocation.optimizer import load_regimes
-                regime_df = load_regimes()
-            regime_df = regime_df.dropna(subset=["regime"])
-            regime_df = regime_df.sort_index()
-            if regime_df.index.duplicated().any():
-                regime_df = regime_df[~regime_df.index.duplicated(keep="last")]
-            regime_df = regime_df.reindex(prices.index).ffill()
-    else:
-        csv_path = OUTPUTS_DIR / "regime_labels_expanded.csv"
-        if csv_path.exists():
-            regime_df = pd.read_csv(csv_path, parse_dates=["date"], index_col="date")
-        else:
-            from src.allocation.optimizer import load_regimes
-            regime_df = load_regimes()
-        regime_df = regime_df.dropna(subset=["regime"])
-        regime_df = regime_df.sort_index()
-        if regime_df.index.duplicated().any():
-            regime_df = regime_df[~regime_df.index.duplicated(keep="last")]
-        regime_df = regime_df.reindex(prices.index).ffill()
-    
-    returns_daily = prices[tickers_to_use].pct_change().iloc[1:]
-    returns_daily["cash"] = CASH_DAILY_YIELD
-
-    segments = _make_segments(start, end, min_train_months, test_months, expanding)
-    if not segments:
-        logger.warning("No segments generated. Need more history.")
+    if not oos_parts and not rows:
         return pd.DataFrame()
-    
-    # Fast mode: limit segments
-    if max_segments and len(segments) > max_segments:
-        logger.info("[FAST MODE] Limiting segments from %d to %d", len(segments), max_segments)
-        segments = segments[-max_segments:]
-    
-    logger.info("Generated %d segments", len(segments))
 
-    rows: list[dict] = []
-    
-    # Pre-compute benchmarks once (outside segment loop)
-    if timing:
-        with timing.time("compute_benchmarks"):
-            benchmarks = compute_benchmark_returns(returns_daily, regime_df)
-    else:
-        benchmarks = compute_benchmark_returns(returns_daily, regime_df)
-    
-    for seg_idx, (train_start, train_end, test_start, test_end) in enumerate(segments):
-        # Train: filter returns and regimes to train period
-        if timing:
-            with timing.time("segment_train_data_prep"):
-                train_returns = prices.resample("ME").last().pct_change().dropna()
-                train_returns = train_returns.loc[train_start:train_end]
-                if "cash" not in train_returns.columns:
-                    train_returns["cash"] = RF_MONTHLY
-                train_regimes = regime_df.loc[:train_end].resample("ME").last().dropna(how="all")
-                train_regimes = train_regimes.loc[train_regimes.index <= train_end]
-        else:
-            train_returns = prices.resample("ME").last().pct_change().dropna()
-            train_returns = train_returns.loc[train_start:train_end]
-            if "cash" not in train_returns.columns:
-                train_returns["cash"] = RF_MONTHLY
-            train_regimes = regime_df.loc[:train_end].resample("ME").last().dropna(how="all")
-            train_regimes = train_regimes.loc[train_regimes.index <= train_end]
-
-        if len(train_returns) < 24 or len(train_regimes) < 12:
-            continue
-
-        # Optimization (with caching)
-        if use_cache:
-            opt_params = {
-                "train_start": train_start.isoformat(),
-                "train_end": train_end.isoformat(),
-                "portfolio_method": portfolio_construction_method,
-            }
-            allocations = get_cached("allocations", opt_params)
-            if allocations is None:
-                if timing:
-                    with timing.time("segment_optimization"):
-                        allocations = optimize_allocations_from_data(train_returns, train_regimes)
-                        set_cached("allocations", opt_params, allocations)
-                else:
-                    allocations = optimize_allocations_from_data(train_returns, train_regimes)
-                    set_cached("allocations", opt_params, allocations)
-            else:
-                if timing:
-                    timing.add("segment_optimization_cached", 0)
-        else:
-            if timing:
-                with timing.time("segment_optimization"):
-                    allocations = optimize_allocations_from_data(train_returns, train_regimes)
-            else:
-                allocations = optimize_allocations_from_data(train_returns, train_regimes)
-        
-        if not allocations:
-            continue
-
-        # Test: run backtest on full history, slice to test period
-        if timing:
-            with timing.time("segment_backtest"):
-                result = run_backtest_with_allocations(
-                    prices, regime_df, allocations,
-                    return_weights=True,
-                    use_stagflation_override=use_stagflation_override,
-                    use_stagflation_risk_on_cap=use_stagflation_risk_on_cap,
-                    stagflation_risk_on_cap=stagflation_risk_on_cap,
-                    use_regime_smoothing=use_regime_smoothing,
-                    regime_smoothing_window=regime_smoothing_window,
-                    use_hybrid_signal=use_hybrid_signal,
-                    hybrid_macro_weight=hybrid_macro_weight,
-                    market_lookback_months=market_lookback_months,
-                    use_momentum=use_momentum,
-                    trend_filter_type=trend_filter_type,
-                    trend_filter_risk_on_cap=trend_filter_risk_on_cap,
-                    vol_scaling_method=vol_scaling_method,
-                    portfolio_construction_method=portfolio_construction_method,
-                    momentum_12m_weight=momentum_12m_weight,
-                    tickers=tickers_to_use,
-                    assets=assets_to_use,
-                    risk_on_sleeve=risk_on_sleeve,
-                    risk_off_sleeve=risk_off_sleeve,
-                    use_vol_regime=use_vol_regime,
-                    vol_regime_weight=vol_regime_weight,
-                    quarterly_rebalance=quarterly_rebalance,
-                    tolerance=tolerance,
-                    sigmoid_scale=sigmoid_scale,
-                    rf_sleeve_cap=rf_sleeve_cap,
-                    momentum_6m_weight=momentum_6m_weight,
-                    breadth_weight=breadth_weight,
-                    breadth_prices=_breadth_prices,
-                    vol_zscore_weight=vol_zscore_weight,
-                    yield_curve_weight=yield_curve_weight,
-                    yield_curve_data=_yield_curve_data,
-                    inversion_flag_offset=inversion_flag_offset,
-                    breadth_flag_offset=breadth_flag_offset,
-                    vol_target_annual=vol_target_annual,
-                    use_post_blend_inv_vol=use_post_blend_inv_vol,
-                )
-        else:
-            result = run_backtest_with_allocations(
-                prices, regime_df, allocations,
-                return_weights=True,
-                use_stagflation_override=use_stagflation_override,
-                use_stagflation_risk_on_cap=use_stagflation_risk_on_cap,
-                stagflation_risk_on_cap=stagflation_risk_on_cap,
-                use_regime_smoothing=use_regime_smoothing,
-                regime_smoothing_window=regime_smoothing_window,
-                use_hybrid_signal=use_hybrid_signal,
-                hybrid_macro_weight=hybrid_macro_weight,
-                market_lookback_months=market_lookback_months,
-                use_momentum=use_momentum,
-                trend_filter_type=trend_filter_type,
-                trend_filter_risk_on_cap=trend_filter_risk_on_cap,
-                vol_scaling_method=vol_scaling_method,
-                portfolio_construction_method=portfolio_construction_method,
-                momentum_12m_weight=momentum_12m_weight,
-                tickers=tickers_to_use,
-                assets=assets_to_use,
-                risk_on_sleeve=risk_on_sleeve,
-                risk_off_sleeve=risk_off_sleeve,
-                use_vol_regime=use_vol_regime,
-                vol_regime_weight=vol_regime_weight,
-                quarterly_rebalance=quarterly_rebalance,
-                tolerance=tolerance,
-                sigmoid_scale=sigmoid_scale,
-                rf_sleeve_cap=rf_sleeve_cap,
-                momentum_6m_weight=momentum_6m_weight,
-                breadth_weight=breadth_weight,
-                breadth_prices=_breadth_prices,
-                vol_zscore_weight=vol_zscore_weight,
-                yield_curve_weight=yield_curve_weight,
-                yield_curve_data=_yield_curve_data,
-                inversion_flag_offset=inversion_flag_offset,
-                breadth_flag_offset=breadth_flag_offset,
-                vol_target_annual=vol_target_annual,
-                use_post_blend_inv_vol=use_post_blend_inv_vol,
-            )
-        
-        if isinstance(result, tuple):
-            strat_rets, strat_weights = result[0], result[1]
-        else:
-            strat_rets = result
-            strat_weights = None
-
-        test_rets = strat_rets.loc[test_start:test_end].dropna()
-        if len(test_rets) < 5:
-            continue
-
-        test_bench = {k: v.loc[test_start:test_end].dropna() for k, v in benchmarks.items()}
-        bench_spy = bench_rets = test_bench.get("SPY") if "SPY" in test_bench else None
-
-        w = strat_weights.loc[test_start:test_end] if strat_weights is not None else None
-        row: dict = {
-            "segment": seg_idx,
-            "train_start": train_start.strftime("%Y-%m"),
-            "train_end": train_end.strftime("%Y-%m"),
-            "test_start": test_start.strftime("%Y-%m"),
-            "test_end": test_end.strftime("%Y-%m"),
-        }
-        
-        if timing:
-            with timing.time("segment_metrics"):
-                row.update(_metrics_row("Strategy", test_rets, bench_rets=bench_spy, weights=w))
-                for bname, bret in test_bench.items():
-                    row.update(_metrics_row(bname, bret))
-        else:
-            row.update(_metrics_row("Strategy", test_rets, bench_rets=bench_spy, weights=w))
-            for bname, bret in test_bench.items():
-                row.update(_metrics_row(bname, bret))
-
-        rows.append(row)
+    _ = _stitch_non_overlapping_oos_returns(oos_parts)
 
     df = pd.DataFrame(rows)
     if df.empty:
@@ -419,31 +728,17 @@ def run_walk_forward_evaluation(
         return df
 
     # Overall: average of segment-level metrics (standard for walk-forward)
-    if timing:
-        with timing.time("compute_overall_metrics"):
-            overall_row: dict = {
-                "segment": "OVERALL",
-                "train_start": "",
-                "train_end": "",
-                "test_start": start,
-                "test_end": end,
-            }
-            for col in df.columns:
-                if col not in overall_row and df[col].dtype in (np.float64, np.float32):
-                    overall_row[col] = df[col].mean()
-            df = pd.concat([df, pd.DataFrame([overall_row])], ignore_index=True)
-    else:
-        overall_row: dict = {
-            "segment": "OVERALL",
-            "train_start": "",
-            "train_end": "",
-            "test_start": start,
-            "test_end": end,
-        }
-        for col in df.columns:
-            if col not in overall_row and df[col].dtype in (np.float64, np.float32):
-                overall_row[col] = df[col].mean()
-        df = pd.concat([df, pd.DataFrame([overall_row])], ignore_index=True)
+    overall_row: dict = {
+        "segment": "OVERALL",
+        "train_start": "",
+        "train_end": "",
+        "test_start": start,
+        "test_end": end,
+    }
+    for col in df.columns:
+        if col not in overall_row and df[col].dtype in (np.float64, np.float32):
+            overall_row[col] = df[col].mean()
+    df = pd.concat([df, pd.DataFrame([overall_row])], ignore_index=True)
 
     run_id = str(uuid.uuid4())
     df.insert(0, "run_id", run_id)
@@ -451,89 +746,46 @@ def run_walk_forward_evaluation(
     # Persistence (optional in fast mode)
     if not skip_persist:
         OUTPUTS_DIR.mkdir(exist_ok=True)
-        
-        if timing:
-            with timing.time("csv_write"):
-                latest_path = OUTPUTS_DIR / "walk_forward_results.csv"
-                df.to_csv(latest_path, index=False)
-                run_csv_path = OUTPUTS_DIR / f"walk_forward_{run_id}.csv"
-                df.to_csv(run_csv_path, index=False)
-        else:
-            latest_path = OUTPUTS_DIR / "walk_forward_results.csv"
-            df.to_csv(latest_path, index=False)
-            run_csv_path = OUTPUTS_DIR / f"walk_forward_{run_id}.csv"
-            df.to_csv(run_csv_path, index=False)
-        
-        if timing:
-            with timing.time("sqlite_persist"):
-                from src.evaluation.model_results_db import persist_walk_forward_run
-                persist_walk_forward_run(
-                    run_id,
-                    df,
-                    {
-                        "start_date": start,
-                        "end_date": end,
-                        "min_train_months": min_train_months,
-                        "test_months": test_months,
-                        "expanding": expanding,
-                        "use_stagflation_override": use_stagflation_override,
-                        "use_stagflation_risk_on_cap": use_stagflation_risk_on_cap,
-                        "stagflation_risk_on_cap": stagflation_risk_on_cap,
-                        "use_regime_smoothing": use_regime_smoothing,
-                        "regime_smoothing_window": regime_smoothing_window,
-                        "use_hybrid_signal": use_hybrid_signal,
-                        "hybrid_macro_weight": hybrid_macro_weight,
-                        "market_lookback_months": market_lookback_months,
-                        "use_momentum": use_momentum,
-                        "trend_filter_type": trend_filter_type,
-                        "trend_filter_risk_on_cap": trend_filter_risk_on_cap,
-                        "vol_scaling_method": vol_scaling_method,
-                        "portfolio_construction_method": portfolio_construction_method,
-                        "momentum_12m_weight": momentum_12m_weight,
-                        "quarterly_rebalance": quarterly_rebalance,
-                    },
-                    str(run_csv_path),
-                )
-        else:
-            from src.evaluation.model_results_db import persist_walk_forward_run
-            persist_walk_forward_run(
-                run_id,
-                df,
-                {
-                    "start_date": start,
-                    "end_date": end,
-                    "min_train_months": min_train_months,
-                    "test_months": test_months,
-                    "expanding": expanding,
-                    "use_stagflation_override": use_stagflation_override,
-                    "use_stagflation_risk_on_cap": use_stagflation_risk_on_cap,
-                    "stagflation_risk_on_cap": stagflation_risk_on_cap,
-                    "use_regime_smoothing": use_regime_smoothing,
-                    "regime_smoothing_window": regime_smoothing_window,
-                    "use_hybrid_signal": use_hybrid_signal,
-                    "hybrid_macro_weight": hybrid_macro_weight,
-                    "market_lookback_months": market_lookback_months,
-                    "use_momentum": use_momentum,
-                    "trend_filter_type": trend_filter_type,
-                    "trend_filter_risk_on_cap": trend_filter_risk_on_cap,
-                    "vol_scaling_method": vol_scaling_method,
-                    "portfolio_construction_method": portfolio_construction_method,
-                    "momentum_12m_weight": momentum_12m_weight,
-                    "quarterly_rebalance": quarterly_rebalance,
-                    "tolerance": tolerance,
-                    "sigmoid_scale": sigmoid_scale,
-                    "rf_sleeve_cap": rf_sleeve_cap,
-                    "use_post_blend_inv_vol": use_post_blend_inv_vol,
-                },
-                str(run_csv_path),
-            )
+        latest_path = OUTPUTS_DIR / "walk_forward_results.csv"
+        df.to_csv(latest_path, index=False)
+        run_csv_path = OUTPUTS_DIR / f"walk_forward_{run_id}.csv"
+        df.to_csv(run_csv_path, index=False)
+
+        from src.evaluation.model_results_db import persist_walk_forward_run
+        persist_walk_forward_run(
+            run_id,
+            df,
+            {
+                "start_date": start,
+                "end_date": end,
+                "min_train_months": min_train_months,
+                "test_months": test_months,
+                "expanding": expanding,
+                "use_stagflation_override": use_stagflation_override,
+                "use_stagflation_risk_on_cap": use_stagflation_risk_on_cap,
+                "stagflation_risk_on_cap": stagflation_risk_on_cap,
+                "use_regime_smoothing": use_regime_smoothing,
+                "regime_smoothing_window": regime_smoothing_window,
+                "use_hybrid_signal": use_hybrid_signal,
+                "hybrid_macro_weight": hybrid_macro_weight,
+                "market_lookback_months": market_lookback_months,
+                "use_momentum": use_momentum,
+                "trend_filter_type": trend_filter_type,
+                "trend_filter_risk_on_cap": trend_filter_risk_on_cap,
+                "vol_scaling_method": vol_scaling_method,
+                "portfolio_construction_method": portfolio_construction_method,
+                "momentum_12m_weight": momentum_12m_weight,
+                "quarterly_rebalance": quarterly_rebalance,
+                "tolerance": tolerance,
+                "sigmoid_scale": sigmoid_scale,
+                "rf_sleeve_cap": rf_sleeve_cap,
+                "use_post_blend_inv_vol": use_post_blend_inv_vol,
+            },
+            str(run_csv_path),
+        )
 
         logger.info("Saved walk-forward results to %s and %s", latest_path, run_csv_path)
     else:
         logger.info("[FAST MODE] Skipping CSV and SQLite persistence")
-    
-    # Log timing report
-    if timing:
-        timing.log_summary()
-    
+
     return df

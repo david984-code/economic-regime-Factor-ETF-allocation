@@ -24,7 +24,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.config import OUTPUTS_DIR
+from src.config import BASELINE_WALK_FORWARD, OUTPUTS_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +38,9 @@ DEFAULT_GRID: dict[str, list[Any]] = {
     "tolerance": [0.0, 0.01, 0.015, 0.02],
 }
 
-# Baseline values (from PROJECT_CONTEXT.md accepted model)
-BASELINE: dict[str, Any] = {
-    "market_lookback_months": 24,
-    "sigmoid_scale": 0.25,
-    "trend_filter_type": "none",
-    "tolerance": 0.015,
-}
+# Baseline values — subset of production walk-forward config (src.config.BASELINE_WALK_FORWARD)
+_BASELINE_KEYS = ("market_lookback_months", "sigmoid_scale", "trend_filter_type", "tolerance")
+BASELINE: dict[str, Any] = {k: BASELINE_WALK_FORWARD[k] for k in _BASELINE_KEYS}
 
 # Metrics to extract from walk-forward OVERALL row
 METRICS_COLS = [

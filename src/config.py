@@ -83,6 +83,32 @@ MIN_VOL = 0.05
 MAX_VOL = 2.00
 COST_BPS = 0.0008  # 8 bps per dollar traded (one-way)
 
+# --- Production walk-forward baseline (single source of truth) ---
+BASELINE_WALK_FORWARD: dict[str, object] = {
+    # Signal knobs
+    "market_lookback_months": 24,
+    "sigmoid_scale": 0.25,
+    "tolerance": 0.015,
+    "trend_filter_type": "none",
+    # Regime/portfolio construction
+    "portfolio_construction_method": "equal_weight",
+    "use_stagflation_override": False,
+    "use_stagflation_risk_on_cap": False,
+    "use_regime_smoothing": False,
+    "use_hybrid_signal": True,
+    "hybrid_macro_weight": 0.0,
+    "use_momentum": True,
+    "momentum_12m_weight": 0.0,
+    "momentum_6m_weight": 0.0,
+    "vol_scaling_method": "none",
+    "use_post_blend_inv_vol": True,
+    # Walk-forward design
+    "min_train_months": 60,
+    "test_months": 12,
+    "expanding": True,
+    "quarterly_rebalance": False,
+}
+
 # --- Regime-specific cash constraints (min, max) ---
 REGIME_CASH: dict[str, tuple[float, float]] = {
     "Recovery": (0.05, 0.10),

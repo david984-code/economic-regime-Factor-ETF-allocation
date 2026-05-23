@@ -23,7 +23,12 @@ import numpy as np
 import pandas as pd
 
 from src.config import (
-    ASSETS, RISK_OFF_ASSETS_BASE, RISK_ON_ASSETS_BASE, TICKERS, VOL_LOOKBACK,
+    ASSETS,
+    BASELINE_WALK_FORWARD,
+    RISK_OFF_ASSETS_BASE,
+    RISK_ON_ASSETS_BASE,
+    TICKERS,
+    VOL_LOOKBACK,
 )
 from src.data.market_ingestion import fetch_prices
 from src.evaluation.walk_forward import run_walk_forward_evaluation
@@ -33,35 +38,21 @@ logging.basicConfig(level=logging.WARNING)
 
 FULL_START = "2010-01-01"
 FULL_END   = None
-TAU        = 0.015
+TAU        = float(BASELINE_WALK_FORWARD["tolerance"])
 
 # Accepted walk-forward baseline (full history prior runs)
 KNOWN_BASE_CAGR   = 0.075
 KNOWN_BASE_SHARPE = 0.52
 KNOWN_BASE_TO     = 1.18
 
-SHARED_KWARGS = dict(
-    start=FULL_START,
-    end=FULL_END,
-    min_train_months=60,
-    test_months=12,
-    expanding=True,
-    use_stagflation_override=False,
-    use_stagflation_risk_on_cap=False,
-    use_regime_smoothing=False,
-    use_hybrid_signal=True,
-    hybrid_macro_weight=0.0,
-    use_momentum=True,
-    trend_filter_type="none",
-    vol_scaling_method="none",
-    portfolio_construction_method="equal_weight",
-    momentum_12m_weight=0.0,
-    quarterly_rebalance=False,
-    fast_mode=False,
-    skip_persist=True,
-    use_vol_regime=False,
-    market_lookback_months=24,
-)
+SHARED_KWARGS = {
+    **BASELINE_WALK_FORWARD,
+    "start": FULL_START,
+    "end": FULL_END,
+    "fast_mode": False,
+    "skip_persist": True,
+    "use_vol_regime": False,
+}
 
 
 # ---------------------------------------------------------------------------
