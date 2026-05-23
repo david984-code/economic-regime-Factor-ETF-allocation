@@ -1,0 +1,5 @@
+#!/bin/sh
+# Git pre-commit hook launcher for Windows (Git Bash) and Unix.
+HOOK_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$HOOK_DIR/pre-commit.ps1"
+exit $?

@@ -26,3 +26,18 @@ outputs/                    # Generated at runtime (not in git)
 
 pyproject.toml              # Dependencies, build config, tool settings (uv, ruff, mypy)
 .env                        # API keys (local only, not in git)
+```
+
+---
+
+## FRED API key (not hardcoded)
+
+Set **`FRED_API_KEY`** in the environment or in a local **`.env`** (gitignored). Alternatively, put the key in a file and set **`FRED_API_KEY_FILE`** to that path (single line). The pipeline resolves this via `src/utils/fred_key.py`.
+
+## Sharing logs, screenshots, or chat output
+
+- Never paste raw output of `scripts/_check_fred_key.py` — it shows key fingerprints (masked prefix/suffix).
+- Before screenshotting terminal output, scroll past any key resolution sections.
+- If a key fingerprint (even a masked prefix/suffix) appears in any external system (Slack, email, chat, screenshot), **rotate the FRED key immediately** at [fred.stlouisfed.org](https://fred.stlouisfed.org/docs/api/api_key.html).
+
+See **`SECURITY.md`** for the full secret-handling protocol.
