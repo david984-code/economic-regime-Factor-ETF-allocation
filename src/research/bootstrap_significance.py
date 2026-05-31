@@ -185,8 +185,13 @@ def paired_block_bootstrap_delta_sharpe(
             pd.Series(boot_s), rf_monthly=rf_monthly
         ) - monthly_sharpe(pd.Series(boot_b), rf_monthly=rf_monthly)
 
+    # Center bootstrap distribution before the H0:delta=0 test. Under H_alt the
+    # bootstrap is centered at obs_delta, so an uncentered |boot| >= |obs| test
+    # would mostly measure distributional symmetry, not deviation from zero
+    # (Politis & Romano 1994; Lahiri 2003).
     abs_obs = abs(obs_delta)
-    p_two_sided = float(np.mean(np.abs(boot_deltas) >= abs_obs))
+    centered = boot_deltas - boot_deltas.mean()
+    p_two_sided = float(np.mean(np.abs(centered) >= abs_obs))
     ci_low, ci_high = np.percentile(boot_deltas, [2.5, 97.5])
     verdict = "reject_H0" if p_two_sided < alpha else "fail_to_reject_H0"
 
