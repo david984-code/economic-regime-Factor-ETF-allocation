@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  fresh-clone-smoke-test:
+    # The single most important thing this CI catches: a missing src file that
+    # was used locally but never committed (e.g. src/utils/ticker_universe.py
+    # which sat uncommitted from 2026-03-26 until 2026-06-07 -- making every
+    # fresh clone fail at import).
+    name: Fresh-clone import smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: latest
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Sync dependencies (lockfile)
+        run: uv sync --frozen
+
+      - name: Verify all top-level src modules import
+        run: |
+          uv run python -c "
+          import importlib, sys
+          mods = [
+              'src.pipeline',
+              'src.config',
+              'src.status',
+              'src.backtest.engine',
+              'src.execution.auto_rebalance',
+              'src.execution.ibkr_adapter',
+              'src.execution.monthly_rebalance_runner',
+              'src.models.regime_classifier',
+              'src.allocation.optimizer',
+              'src.evaluation.walk_forward',
+              'src.research.bootstrap_significance',
+              'src.utils.ticker_universe',
+              'src.utils.database',
+              'src.data.market_ingestion',
+          ]
+          failures = []
+          for m in mods:
+              try:
+                  importlib.import_module(m)
+                  print(f'  OK  {m}')
+              except Exception as e:
+                  failures.append((m, e))
+                  print(f'  FAIL {m}: {type(e).__name__}: {e}')
+          if failures:
+              print(f'\n{len(failures)} module(s) failed to import on fresh clone.')
+              sys.exit(1)
+          print(f'\nAll {len(mods)} top-level modules import cleanly.')
+          "
+
+  tests:
+    name: pytest
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: latest
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Sync dependencies (lockfile)
+        run: uv sync --frozen
+
+      - name: Run pytest
+        run: uv run pytest -q --tb=short
