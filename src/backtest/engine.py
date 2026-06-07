@@ -1511,6 +1511,26 @@ def run_backtest_with_allocations(
 def run_backtest(pipeline_data: "PipelineData | None" = None) -> dict[str, Any]:
     """Run full backtest. Returns dict with portfolio_returns, metrics, etc.
 
+    .. warning::
+
+        This function is **in-sample by design**: it loads
+        ``optimal_allocations.csv`` (regime weights fit on the full available
+        history) and replays them over that same period. The resulting
+        Sharpe / drawdown numbers are NOT a valid out-of-sample claim.
+
+        For OOS performance, use
+        :func:`src.evaluation.walk_forward.collect_walk_forward_oos_returns`,
+        which refits the optimizer on an expanding training window each
+        month and stitches the first novel month of each segment into a
+        non-overlapping return series. Every published headline number
+        (CAGR, Sharpe, max drawdown, down-month hit rate) in the project
+        README and ``docs/bootstrap_reconciliation.md`` comes from that
+        walk-forward path, not from ``run_backtest``.
+
+        ``run_backtest`` is retained for the live ``current_weights``
+        recommendation it produces in the same call, and for sanity-check
+        comparisons against the walk-forward path.
+
     Args:
         pipeline_data: If provided, use cached prices. Otherwise fetch via fetch_prices.
     """

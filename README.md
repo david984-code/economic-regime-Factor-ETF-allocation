@@ -28,7 +28,7 @@ Strategy outperforms 60/40 in 76% of months where 60/40 declines (`avg +0.52pp` 
 3. **Walk-forward evaluation** (`src/evaluation/walk_forward.py`). Expanding training window (≥60 months), monthly refit, ~116 OOS segments. Each OOS segment contributes its first novel month to a stitched non-overlapping return series. This is the source of every performance number quoted above.
 4. **Live execution** (`src/execution/`). `auto_rebalance.py::run_auto_rebalance()` self-gates to the first trading day of the month, generates fresh target weights from the regime classifier + allocations, runs dry-run + safety checks, then submits paper orders to IBKR via the API. Scheduled via Windows Task Scheduler.
 
-> **Note on the ML forecast module** (`src/models/regime_forecast.py`). A GradientBoosting next-month `risk_on` forecast model exists as experimental code but is **NOT in the live trading path or the published OOS numbers** as of 2026-06-07. It was previously blended into live weights, was never validated in the walk-forward backtest, and has been disconnected from the production pipeline. Treat as research/unvalidated.
+> **Note on previous ML overlay.** An earlier version blended a GradientBoosting next-month `risk_on` forecast into live weights. The layer never entered the walk-forward backtest, so it was an unvalidated degree of freedom on top of validated logic. Removed 2026-06-07. Git history preserves the model code if it is ever revisited; the published OOS numbers above are unaffected.
 
 ## Project layout
 
@@ -43,7 +43,7 @@ src/
   evaluation/                walk-forward harness, benchmarks, metrics
   execution/                 IBKR adapter, monthly rebalance, safety, reconciliation
   features/                  macro feature engineering (z-scores, etc.)
-  models/                    regime_classifier.py (used), regime_forecast.py (experimental)
+  models/                    regime_classifier.py
   research/                  bootstrap significance, sensitivity sweeps
   utils/                     database, ticker universe, caching helpers
 tests/                       pytest suite (53 tests)

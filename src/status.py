@@ -40,12 +40,6 @@ def _regime_status() -> dict[str, Any]:
         db = Database()
         df = db.load_regime_labels()
         bt = db.get_latest_backtest_results()
-        forecast = None
-        try:
-            next_month = (pd.Timestamp.today().to_period("M") + 1).strftime("%Y-%m")
-            forecast = db.load_latest_regime_forecast(next_month)
-        except Exception:
-            pass
         db.close()
 
         if df.empty:
@@ -61,8 +55,6 @@ def _regime_status() -> dict[str, Any]:
         }
         if bt:
             out["backtest"] = bt["portfolio"]
-        if forecast:
-            out["forecast"] = forecast
         return out
     except Exception as e:
         return {"error": str(e)}
@@ -258,9 +250,6 @@ def print_status(quick: bool = False) -> None:
         print(f"\n  Regime: {regime.get('regime', '?')} | risk_on: {ro_str}")
         if regime.get("changed"):
             print(f"  !! REGIME CHANGED from {regime.get('prev_regime')}")
-        if regime.get("forecast"):
-            fc = regime["forecast"]
-            print(f"  Forecast: risk_on={fc.get('risk_on_forecast', '?'):.3f} (next month)")
 
     # Current weights
     if weights:

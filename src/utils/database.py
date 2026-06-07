@@ -55,17 +55,6 @@ class Database:
             )
         """)
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS regime_forecast (
-                forecast_date TEXT NOT NULL,
-                target_month TEXT NOT NULL,
-                risk_on_forecast REAL NOT NULL,
-                regime_forecast TEXT,
-                accuracy_1m REAL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (forecast_date, target_month)
-            )
-        """)
-        cursor.execute("""
             CREATE TABLE IF NOT EXISTS backtest_results (
                 run_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 portfolio_cagr REAL,
@@ -127,47 +116,6 @@ class Database:
             regime_df = df[df["regime"] == regime]
             allocations[regime] = dict(zip(regime_df["asset"], regime_df["weight"]))
         return allocations
-
-    def save_regime_forecast(
-        self,
-        forecast_date: str,
-        target_month: str,
-        risk_on_forecast: float,
-        regime_forecast: str | None = None,
-        accuracy_1m: float | None = None,
-    ) -> None:
-        """Save regime forecast for a target month."""
-        cursor = self.conn.cursor()
-        cursor.execute(
-            """
-            INSERT OR REPLACE INTO regime_forecast
-            (forecast_date, target_month, risk_on_forecast, regime_forecast, accuracy_1m)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (forecast_date, target_month, risk_on_forecast, regime_forecast, accuracy_1m),
-        )
-        self.conn.commit()
-        logger.info("Saved regime forecast for %s", target_month)
-
-    def load_latest_regime_forecast(self, target_month: str) -> dict[str, float | str | None] | None:
-        """Load most recent forecast for a target month."""
-        df = pd.read_sql(
-            """
-            SELECT forecast_date, risk_on_forecast, regime_forecast
-            FROM regime_forecast WHERE target_month = ?
-            ORDER BY forecast_date DESC LIMIT 1
-            """,
-            self.conn,
-            params=(target_month,),
-        )
-        if df.empty:
-            return None
-        row = df.iloc[0]
-        return {
-            "forecast_date": str(row["forecast_date"]),
-            "risk_on_forecast": float(row["risk_on_forecast"]),
-            "regime_forecast": str(row["regime_forecast"]) if pd.notna(row["regime_forecast"]) else None,
-        }
 
     def save_backtest_results(self, metrics: dict[str, float], bench_metrics: dict[str, float]) -> None:
         """Save backtest performance metrics."""

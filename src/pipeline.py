@@ -78,12 +78,12 @@ def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
         len(pipeline_data.get_prices()),
     )
 
-    # Steps 2–3: Use shared pipeline_data (no re-fetch)
-    # NOTE: the "regime_forecast" step (GradientBoosting ML overlay) was removed
-    # 2026-06-07. It fed only live weight generation, never the walk-forward
-    # backtest -- an unvalidated degree of freedom on top of validated logic.
-    # The model code remains in src/models/regime_forecast.py for future
-    # experimental work but is no longer executed in the daily pipeline.
+    # Steps 2-3: Use shared pipeline_data (no re-fetch).
+    # NOTE: the prior "regime_forecast" step (GradientBoosting ML overlay) was
+    # removed 2026-06-07. It fed only live weights, never the walk-forward
+    # backtest, and added an unmeasured degree of freedom to live trading.
+    # Model code, DB schema, and status display were all removed; git history
+    # preserves them if the layer is ever revisited.
     steps = [
         ("optimizer", "Portfolio optimization", _run_optimizer, [pipeline_data]),
         ("backtest", "Backtest", _run_backtest, [pipeline_data]),
