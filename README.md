@@ -46,7 +46,7 @@ src/
   models/                    regime_classifier.py
   research/                  bootstrap significance, sensitivity sweeps
   utils/                     database, ticker universe, caching helpers
-tests/                       pytest suite (53 tests)
+tests/                       pytest suite (73 tests)
 docs/                        methodology + statistical-audit memos
 scripts/                     run_walk_forward.py, analyze_walk_forward.py
 config/                      paper_trading.yaml (IBKR connection, safety limits)
@@ -73,7 +73,37 @@ pytest
 
 See [docs/QUICK_START.md](docs/QUICK_START.md) for more.
 
-## Methodology
+## Universe and data sources
+
+**ETF universe (10 tickers + cash):** SPY, GLD, MTUM, VLUE, USMV, QUAL, IJR, VIG (risk-on sleeve); IEF, TLT (risk-off sleeve); GLD also acts as a real-asset / inflation hedge. Cash earns the configured risk-free rate. Daily prices via Yahoo Finance (`yfinance`).
+
+**Macro features (FRED series IDs):**
+
+| Indicator | FRED ID | Frequency |
+|---|---|---|
+| Real GDP | `GDPC1` / `GDP` | Quarterly |
+| CPI (all items) | `CPIAUCSL` | Monthly |
+| M2 money stock | `M2SL` | Monthly |
+| M2 velocity | `M2V` | Quarterly |
+| 10-year Treasury yield | `DGS10` | Daily |
+| 3-month Treasury yield | `DGS3MO` | Daily |
+| Industrial production | `INDPRO` | Monthly |
+| ISM Manufacturing PMI | `NAPM` | Monthly |
+| Initial jobless claims | `ICSA` | Weekly |
+| HY credit OAS (BofA) | `BAMLH0A0HYM2` | Daily |
+
+## Methodology and known caveats
+
+This section names the sources of bias the strategy is and is not protected against. Read this before quoting any number from the table.
+
+- **Walk-forward, monthly refit, expanding window.** All OOS numbers above are from `evaluation.walk_forward.collect_walk_forward_oos_returns`: train on data ≥60 months from `START_DATE` through month *T*, generate weights for month *T+1*, advance, repeat (~116 segments). The first novel month of each segment is stitched into the OOS return series. The default `backtest.engine.run_backtest()` is **in-sample** — its docstring warns; do not quote its numbers.
+- **Publication lag (partially handled).** `regime_classifier.py` builds two pipelines: a "legacy" naive merge and a "publication-lag-aware" merge (`resample_to_monthly`). The latter aligns each indicator at its release-date timestamp, not the reference-period timestamp — so for a January 31 weight decision, the model only sees indicators that had actually been released by January 31. This handles the publication-timing axis. **The legacy pipeline is retained for comparison only; the production code path uses the asof-aware version.**
+- **Vintage / revised data (not yet handled — known lookahead source).** FRED series are downloaded via `fredapi`'s `get_series` without `realtime_start`/`realtime_end` parameters, which returns the *latest revised value*. Initial GDP and CPI releases are often revised meaningfully (10–30bps on inflation; sometimes much more on GDP first-vs-third revisions). The "data available on date *T*" used in training is therefore revised data, not the print as released. **This is a real lookahead source.** Switching to ALFRED vintage releases is a known scope item; expect a small but non-zero hit to backtest Sharpe.
+- **Transaction costs (not modeled — known drag source).** The walk-forward backtest assumes frictionless rebalancing. Live rebalance turnover averages 20–30% one-way per month per the dry-run preview. At a realistic 5–10 bps round-trip per dollar traded on a tight-spread ETF universe, this is 1.2–3.0% annualized drag. The published Sharpe / CAGR overstates by roughly this amount. The strategy still beats 60/40 on max drawdown and down-month hit rate (which are largely cost-insensitive), but the Sharpe edge specifically is within the unmodeled cost band.
+- **Statistical significance.** Delta-Sharpe vs 60/40 = +0.131, paired centered block-bootstrap p = 0.30, 95% CI [-0.149, +0.360] — **not significant at 5%**. The defensible claims are the drawdown reduction (-3pp vs 60/40, -15pp vs SPY) and the down-month hit rate (76.3%, p < 0.001 via binomial test). See [docs/bootstrap_reconciliation.md](docs/bootstrap_reconciliation.md) for full audit including a bug fix that had made the legacy p-value uninformative.
+- **Test coverage.** 73 tests pass. Direct known-answer coverage of: `regime_classifier`, `bootstrap_significance`, `allocation/optimizer` (Sortino math, cash floor/ceiling, weight normalization, long-only constraint, winning-asset selection), and `backtest/engine` helpers (`_blend_alloc` math, `_equal_weight_alloc` normalization, `_smooth_regime_labels` window correctness). These are the modules where signal-alignment and weight-normalization bugs would silently inflate edge.
+
+Full methodology references:
 
 - **Walk-forward design and OOS construction:** [docs/WALK_FORWARD_EVALUATION.md](docs/WALK_FORWARD_EVALUATION.md)
 - **Statistical significance audit (centered block bootstrap):** [docs/bootstrap_reconciliation.md](docs/bootstrap_reconciliation.md)
