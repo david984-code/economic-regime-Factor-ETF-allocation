@@ -163,3 +163,81 @@ Baseline A (A boot, raw, 112 mo)                            +0.3942   0.0596*   
 ```
 
 The (xref) rows are the smoking gun for the bootstrap-method bug: same input data, same observed delta, same CI → p_centered = 0.06 vs p_uncentered = 0.47. A's mechanics give the right answer for H0:delta=0; B's mechanics do not.
+
+---
+
+## Appendix C: Robustness extensions (added 2026-06-07)
+
+Three statistical claims that appear in the README but were not directly tested in the original A-vs-B audit. Adding them here so the audit doc carries the same numbers the README quotes.
+
+### C.1 Max-drawdown delta is NOT formally significant
+
+Original README framing claimed "3pp drawdown reduction vs 60/40 is the cleaner defensible claim." A direct paired block-bootstrap on the daily series shows otherwise.
+
+| | Strategy | 60/40 (SPY/IEF) |
+|---|---:|---:|
+| Max drawdown | -18.27% | -21.28% |
+| Observed delta (positive = strategy smaller DD) | +3.014pp | — |
+| 95% bootstrap CI (6mo blocks, 10k iter, paired) | [-1.273pp, +6.618pp] | — |
+| Two-sided p (centered) | 0.108 | — |
+
+CI crosses zero; H0 of equal drawdowns is not rejected at 5%. Single-path max-drawdown is the highest-variance summary statistic in finance — quoting +3pp without dispersion was overstating. The previous "cleaner defensible claim" language was wrong by these numbers and has been removed from the README.
+
+### C.2 Down-month hit rate survives cluster-correction
+
+The 76.3% hit rate (29 of 38 60/40 down months) was originally cited with a naive binomial p = 0.0008. But binomial assumes independent trials, and down months cluster inside drawdown episodes (the strategy's defensive tilt in March of a selloff also helps in April). The effective N is smaller than the count of down months suggests.
+
+Block bootstrap (6-month blocks, 10k iter, resamples whole down-episodes together):
+
+| | Naive binomial | Block bootstrap (cluster-aware) |
+|---|---:|---:|
+| 95% CI on hit rate | [0.62, 1.00] (Clopper-Pearson) | [0.618, 0.900] |
+| One-sided p vs 50% null | 0.0008 | 0.0007 |
+
+The cluster-aware CI [62%, 90%] still has its lower bound well above 50%. The hit rate is **the only outperformance claim vs 60/40 that survives both naive and cluster-aware significance tests.**
+
+### C.3 Gold attribution: regression vs control benchmark
+
+Two complementary tests of whether the regime layer adds value beyond a static gold tilt.
+
+**(a) OLS regression** — fit `(strategy − 60/40) ~ const + β × GLD_return` on daily data:
+
+| | Value |
+|---|---:|
+| R² | 0.318 |
+| β_GLD | 0.192 |
+| p(β_GLD) | ≈ 0 |
+| Strategy annualized excess vs 60/40 | +0.93pp/yr |
+| Gold-explained portion (β × mean(GLD)) | +2.66pp/yr |
+| Residual alpha after stripping gold | **−1.73pp/yr** |
+| Intercept p-value | 0.21 |
+
+The strategy has an effective 19% gold beta. Over the period, GLD's annualized return drove +2.66pp/yr of the observable excess vs 60/40; everything else the model does drags the result back by −1.73pp/yr.
+
+**(b) Direct control benchmark** — build a static 50% SPY / 30% IEF / 20% GLD portfolio rebalanced monthly over the same walk-forward window, run head-to-head:
+
+| Statistic | Strategy | 50/30/20 control | Delta | CI / p |
+|---|---:|---:|---:|---:|
+| CAGR | 10.99% | 11.10% | −0.12pp | CI [-2.76pp, +1.50pp], p = 0.91 |
+| Sharpe | 0.654 | 0.681 | −0.027 | CI [-0.280, +0.114], p = 0.78 |
+| Sortino | 0.625 | 0.649 | −0.024 | — |
+| Max drawdown | -18.27% | -19.08% | +0.81pp | CI [-3.50pp, +2.71pp], p = 0.43 |
+| Down-month hit rate (in 50/30/20 down months) | 53.3% | — | — | binomial p = 0.38 |
+
+**No metric shows the regime classifier + Sortino optimizer beating the static 50/30/20 benchmark.** The regression's negative residual alpha is confirmed structurally: the strategy ties or loses head-to-head against a portfolio with the same gold exposure but no regime logic.
+
+### C.4 Implication for resume / pitch framing
+
+The honest claims that survive:
+
+1. **The system has an end-to-end production deployment** — daily FRED + market ingestion, regime classification, Sortino optimization, walk-forward OOS validation, paired block-bootstrap inference (with a known centering bug fixed), monthly IBKR paper-trading automation, scheduled tasks with wake timers, daily NLV capture, 73 known-answer tests.
+2. **The methodology rigor is real** — including catching the original bootstrap bug, replacing an unvalidated ML overlay, and running a fair-control benchmark that disproved the regime layer's edge.
+3. **The strategy has portfolio-construction properties** — ~10% vol (half SPY's), ~-18% max drawdown (half SPY's), 76% down-month hit rate vs 60/40 (cluster-significant).
+
+The claim that does NOT survive: that the regime classifier or Sortino optimizer add risk-adjusted value over a static gold-tilt portfolio. They do not. A senior PM should read this audit and conclude "this candidate tested the right control and reported the result that disproved their own pitch" — that is the strongest signal in the document.
+
+### C.5 Files where these numbers were computed (local, gitignored)
+
+- `scripts/analysis/output/_other_significance_tests.py` — drawdown delta CI, hit-rate cluster test
+- `scripts/analysis/output/_address_pm_critiques.py` — GLD regression
+- `scripts/analysis/output/_gold_control_benchmark.py` — 50/30/20 control benchmark

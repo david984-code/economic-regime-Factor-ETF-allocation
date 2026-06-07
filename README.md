@@ -2,24 +2,44 @@
 
 A macro-regime-aware ETF allocation system: classify the macro environment from FRED data, optimize a multi-asset portfolio under regime-specific constraints, rebalance monthly via the Interactive Brokers API.
 
+## Headline finding (read first)
+
+**The regime classifier + Sortino optimizer machinery, tested honestly, does not add value over a static 50% SPY / 30% IEF / 20% GLD portfolio rebalanced monthly.**
+
+A head-to-head walk-forward comparison gives that static "gold-tilt" control benchmark a *higher* Sharpe (0.681 vs 0.654), *higher* CAGR (11.10% vs 10.99%), *lower* vol, and a nearly identical max drawdown vs this strategy. Paired block-bootstrap tests of strategy − control find no significant edge on Sharpe (p = 0.78), CAGR (p = 0.91), or drawdown (p = 0.43); down-month hit-rate vs the control is 53.3% (coin flip, p = 0.38). The strategy's apparent outperformance vs 60/40 was entirely the gold weighting — a finding the OLS attribution suggested (R² = 0.32, β_GLD = 0.19, residual alpha = −1.73pp/yr after stripping gold) and the direct control benchmark confirms.
+
+**What this means honestly:** the engineering and statistical rigor in this repo are real — walk-forward OOS over 10.7 years, paired block-bootstrap inference, a methodology-bug fix, end-to-end IBKR paper-trading automation, 73 known-answer tests. The **strategy itself** is a fancy way to hold ~50/30/20 with no demonstrated additional edge. The honest pitch is the infrastructure and the willingness to test against a fair control benchmark, not undiscovered alpha.
+
 ## Out-of-sample performance
 
 Walk-forward OOS, monthly refit, Sep 2015 → May 2026 (10.7 years, 129 months, ~116 refit segments).
 
-|                              | **Strategy** | 60/40 (SPY/IEF) | SPY     | IEF     |
-| ---------------------------- | -----------: | --------------: | ------: | ------: |
-| CAGR                         |   **10.93%** |           9.73% |  15.25% |   1.16% |
-| Annualized volatility        |    **9.98%** |          10.50% |  17.82% |   6.55% |
-| Sharpe (excess, rf = 4.5%)   |    **0.649** |           0.518 |   0.639 |  -0.463 |
-| Sortino (excess)             |    **0.620** |           0.493 |   0.604 |  -0.460 |
-| Max drawdown                 |  **-18.27%** |         -21.28% | -33.72% | -23.92% |
-| Calmar (CAGR / \|MaxDD\|)    |    **0.598** |           0.457 |   0.452 |   0.048 |
-| Monthly CVaR (worst 5%)      |   **-5.21%** |          -5.46% |  -8.91% |     n/a |
-| Beats benchmark in down mo.  |    **76.3%** |               — |       — |       — |
+|                              | **Strategy** | **50/30/20¹** | 60/40 (SPY/IEF) | SPY     | IEF     |
+| ---------------------------- | -----------: | ------------: | --------------: | ------: | ------: |
+| CAGR                         |       10.99% |    **11.10%** |           9.90% |  15.58% |   1.12% |
+| Annualized volatility        |        9.98% |     **9.69%** |          10.49% |  17.80% |   6.55% |
+| Sharpe (excess, rf = 4.5%)   |        0.654 |     **0.681** |           0.533 |   0.656 |  -0.469 |
+| Sortino (excess)             |        0.625 |     **0.649** |           0.508 |   0.620 |  -0.466 |
+| Max drawdown                 |   **-18.27%** |       -19.08% |         -21.28% | -33.72% | -23.92% |
+| Calmar (CAGR / \|MaxDD\|)    |    **0.602** |         0.582 |           0.465 |   0.462 |   0.047 |
+| Beats 60/40 in 60/40 down mo.|    **76.3%** |             — |               — |       — |       — |
+
+¹ **50/30/20 = 50% SPY / 30% IEF / 20% GLD, rebalanced monthly.** Same return source (yfinance daily closes), same walk-forward window, same Sortino calc, same RF=4.5%. The honest control for "did the regime layer add value vs a simple static gold-tilt portfolio."
 
 ![Equity curve and drawdown](docs/figures/equity_drawdown.png)
 
-**Read this before quoting any number above:** the only statistically robust outperformance claim vs 60/40 is the **76.3% down-month hit rate** (cluster-aware 95% CI [62%, 90%], well above the 50% null). The Sharpe delta (+0.13) is not significant (p = 0.30), the max-drawdown delta (-3pp) is not significant either (p = 0.108, CI crosses zero), and the +1.2pp CAGR edge is **inside the unmodeled transaction-cost band of 1.2–3.0pp/yr** — net of costs it could be zero or negative. A regression of strategy-minus-60/40 excess on GLD returns shows the entire excess is explained by the gold tilt (R² = 0.32, β_GLD = 0.19, residual alpha = −1.73pp/yr); a fairer benchmark including gold would close most of the gap. SPY's Sharpe (0.639) is statistically indistinguishable from the strategy's (0.649). The honest pitch is **lower volatility and a defensive overlay**, not Sharpe outperformance. Full audit: [docs/bootstrap_reconciliation.md](docs/bootstrap_reconciliation.md). The caveats section below names every known limitation explicitly.
+**Two things survive a rigorous read of this table:**
+
+1. **The 76.3% down-month hit rate vs 60/40** is cluster-aware significant (95% CI [62%, 90%], well above the 50% null). Strategy did beat 60/40 in 29 of 60/40's 38 down months. This is real and robust.
+2. **The strategy reduces volatility (10% vs SPY 18%) and max drawdown (-18% vs SPY -34%)** relative to pure equity exposure. This is a factual property of the portfolio composition, not a statistical claim that needs a CI.
+
+**Three things do not survive:**
+
+- **Sharpe vs 60/40 = +0.13** is not significant (p = 0.30); Sharpe **vs the 50/30/20 gold-control is *negative***.
+- **Max-drawdown delta vs 60/40 = +3pp** is not significant either (p = 0.108, CI [-1.3pp, +6.6pp] crosses zero); vs 50/30/20 the delta is +0.8pp, also not significant.
+- **CAGR edge vs 60/40 = +1.1pp/yr** sits inside the unmodeled transaction-cost band (1.2–3.0pp/yr); post-cost the edge is zero or negative. Edge vs 50/30/20 is already −0.1pp/yr pre-cost.
+
+Full audit: [docs/bootstrap_reconciliation.md](docs/bootstrap_reconciliation.md).
 
 ## How it works
 
@@ -101,13 +121,14 @@ This section names the sources of bias the strategy is and is not protected agai
 - **Vintage / revised data (not yet handled — known lookahead source).** FRED series are downloaded via `fredapi`'s `get_series` without `realtime_start`/`realtime_end` parameters, which returns the *latest revised value*. Initial GDP and CPI releases are often revised meaningfully (10–30bps on inflation; sometimes much more on GDP first-vs-third revisions). The "data available on date *T*" used in training is therefore revised data, not the print as released. **This is a real lookahead source.** Switching to ALFRED vintage releases is a known scope item; expect a small but non-zero hit to backtest Sharpe.
 - **Transaction costs (not modeled — known drag source).** The walk-forward backtest assumes frictionless rebalancing. Live rebalance turnover averages 20–30% one-way per month per the dry-run preview. At a realistic 5–10 bps round-trip per dollar traded on a tight-spread ETF universe, this is 1.2–3.0% annualized drag. The published Sharpe / CAGR overstates by roughly this amount. The strategy still beats 60/40 on max drawdown and down-month hit rate (which are largely cost-insensitive), but the Sharpe edge specifically is within the unmodeled cost band.
 - **Statistical significance — what survives, what does not.**
-    - **Sharpe delta vs 60/40 = +0.131.** Paired centered block-bootstrap p = 0.30, 95% CI [-0.149, +0.360]. **Not significant at 5%.**
-    - **Max drawdown delta = +3.0pp** (strategy -18.27% vs 60/40 -21.28%). Paired block-bootstrap (10k iter, 6-month blocks) gives 95% CI [-1.27pp, +6.62pp] and two-sided p = 0.108. **Also not significant at 5%** — directionally favorable but inside the noise band of one 10.7-year path. Single-path max-drawdown is the highest-variance statistic available; quoting "3pp reduction" without dispersion was overstating.
-    - **Down-month hit rate vs 60/40 = 76.3%** (29 of 38 60/40 down months). **This one survives both naive and cluster-aware tests.** Naive binomial (assumes IID) gives p ≈ 0.0008; cluster-aware block bootstrap (resamples 6-month blocks to preserve drawdown-episode clustering) gives 95% CI on the hit rate of [62%, 90%] — entire interval is above the 50% null. **This is the only statistically robust outperformance claim.**
-- **The gold-attribution test (single-asset concentration risk).** OLS regression of daily (strategy − 60/40) excess on daily GLD return gives R² = 0.32, β_GLD = 0.19, p(β) ≈ 0. The strategy's annualized excess over 60/40 is +0.93pp/yr; the gold-explained portion (β × mean(GLD)) is +2.66pp/yr; the **residual alpha after stripping gold is −1.73pp/yr** (intercept p = 0.21). **Translation: the strategy's outperformance vs 60/40 is fully explained by gold exposure; the regime classifier + Sortino optimizer, holding gold constant, would have *underperformed* 60/40.** A fairer benchmark that includes gold (e.g., 50% SPY / 30% IEF / 20% GLD) would substantially close the gap — possibly close it entirely. Reported because the reviewer is right that this is the question to ask, not because it flatters the strategy.
-- **Costs erase the return edge.** CAGR edge over 60/40 is +1.2pp/yr (10.93% vs 9.73%). Modeled transaction-cost drag is 1.2–3.0pp/yr. **Post-cost, the CAGR edge is zero or negative.** The only post-cost-defensible claims are vol reduction (~half SPY's) and the cluster-significant down-month hit rate.
-- **Why not just hold SPY?** Fair question. SPY's Sharpe (0.639) is statistically indistinguishable from the strategy's (0.649), and SPY's CAGR is 4.3pp/yr higher (15.25% vs 10.93%). **This strategy does not beat SPY on risk-adjusted return; the pitch is lower vol (10% vs 18%) and lower max drawdown (-18% vs -34%), nothing else.** Use case is for an investor whose loss-aversion makes that trade worth ~4pp/yr of foregone return — not for someone optimizing total wealth.
-- **Live track record clock effectively resets 2026-06-07.** Live paper trading began 2026-05-01 under a hybrid system that blended an unvalidated GradientBoosting forecast into live weights. That overlay was removed 2026-06-07 (commit `c836972` + `75e973e`); the live system now matches the validated walk-forward path. Live OOS data *for the system whose numbers appear in this README* effectively starts 2026-06-07. Expect ~12 months of clean data before live-vs-backtest reconciliation has any signal.
+    - **Down-month hit rate vs 60/40 = 76.3%** (29 of 38 60/40 down months). Naive binomial (assumes IID) gives p ≈ 0.0008; cluster-aware block bootstrap (6-month blocks, preserves drawdown-episode clustering) gives 95% CI on the hit rate of **[62%, 90%]** — entire interval above the 50% null. **This is the only statistically robust outperformance claim vs 60/40.**
+    - **Sharpe delta vs 60/40 = +0.131.** Paired centered block-bootstrap p = 0.30, 95% CI [-0.149, +0.360]. Not significant at 5%.
+    - **Max drawdown delta vs 60/40 = +3.0pp.** Paired block-bootstrap 95% CI [-1.27pp, +6.62pp], p = 0.108. Not significant either — single-path max-drawdown is the highest-variance statistic available, and the CI crosses zero. Earlier README text called this "the cleaner defensible claim"; that was wrong by my own subsequent numbers.
+    - **Sharpe / drawdown / hit-rate vs the 50/30/20 gold control = all not significant** and Sharpe / CAGR are actually slightly *negative*. See the headline-finding section at the top.
+- **The gold-attribution test (single-asset concentration).** OLS regression of daily (strategy − 60/40) excess on daily GLD return gives R² = 0.32, β_GLD = 0.19, p(β) ≈ 0. Strategy annualized excess over 60/40 = +0.93pp/yr; gold-explained portion (β × mean(GLD)) = +2.66pp/yr; **residual alpha after stripping gold = −1.73pp/yr** (intercept p = 0.21). The direct control benchmark (50/30/20) confirms what the regression suggested: the regime classifier + Sortino optimizer, holding gold constant, would not have beaten a fair benchmark with the same gold exposure.
+- **Costs would have erased the 60/40 return edge.** CAGR edge over 60/40 was +1.1pp/yr pre-cost. Modeled transaction-cost drag is 1.2–3.0pp/yr. Post-cost the edge vs 60/40 is zero or negative; the edge vs 50/30/20 is already −0.1pp/yr pre-cost.
+- **Why not just hold SPY?** SPY's Sharpe (0.656) is statistically indistinguishable from the strategy's (0.654), and SPY's CAGR is 4.6pp/yr higher (15.58% vs 10.99%). The strategy does not beat SPY on risk-adjusted return; what it offers is lower vol (10% vs 18%) and lower max drawdown (-18% vs -34%) — useful only for an investor whose loss-aversion makes that trade worth ~5pp/yr of foregone return.
+- **Live track record clock effectively resets 2026-06-07.** Live paper trading began 2026-05-01 under a hybrid system that blended an unvalidated GradientBoosting forecast into live weights. That overlay was removed 2026-06-07 (commits `c836972` + `75e973e`); the live system now matches the validated walk-forward path. Live OOS data *for the system whose numbers appear in this README* effectively starts 2026-06-07. Expect ~12 months of clean data before live-vs-backtest reconciliation has signal.
 - **Test coverage.** 73 tests pass. Direct known-answer coverage of: `regime_classifier`, `bootstrap_significance`, `allocation/optimizer` (Sortino math, cash floor/ceiling, weight normalization, long-only constraint, winning-asset selection), and `backtest/engine` helpers (`_blend_alloc` math, `_equal_weight_alloc` normalization, `_smooth_regime_labels` window correctness). These are the modules where signal-alignment and weight-normalization bugs would silently inflate edge.
 
 Full methodology references:
