@@ -69,12 +69,6 @@ def generate_target_weights() -> dict[str, float]:
     db = Database()
     regime_df = db.load_regime_labels()
     allocations = db.load_optimal_allocations()
-    forecast = None
-    try:
-        next_month = (pd.Timestamp.today().to_period("M") + 1).strftime("%Y-%m")
-        forecast = db.load_latest_regime_forecast(next_month)
-    except Exception:
-        pass
     db.close()
 
     allocations = {str(k).strip(): v for k, v in allocations.items()}
@@ -89,16 +83,12 @@ def generate_target_weights() -> dict[str, float]:
     regime = str(latest["regime"]).strip()
     risk_on = float(latest["risk_on"]) if pd.notna(latest["risk_on"]) else 0.5
 
-    # Blend with forecast if available
-    if forecast is not None:
-        risk_on = 0.5 * risk_on + 0.5 * forecast["risk_on_forecast"]
+    # NOTE: prior versions blended an ML regime forecast into risk_on here.
+    # That layer was UNVALIDATED -- it fed live weights only and never the
+    # walk-forward backtest. Removed 2026-06-07 to align live weights with
+    # the validated WF path.
 
-    logger.info(
-        "Target weight generation: regime=%s risk_on=%.3f forecast=%s",
-        regime,
-        risk_on,
-        "yes" if forecast else "no",
-    )
+    logger.info("Target weight generation: regime=%s risk_on=%.3f", regime, risk_on)
 
     # Build risk-on and risk-off sleeve averages
     w_risk_on = _avg_alloc(allocations, RISK_ON_REGIMES, ASSETS)

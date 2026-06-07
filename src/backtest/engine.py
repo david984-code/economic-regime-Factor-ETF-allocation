@@ -1548,14 +1548,12 @@ def run_backtest(pipeline_data: "PipelineData | None" = None) -> dict[str, Any]:
     if "risk_on" in regime_df.columns and not pd.isna(regime_df.loc[asof, "risk_on"]):
         asof_alpha = float(regime_df.loc[asof, "risk_on"])
 
-    next_month = (asof.to_period("M") + 1).strftime("%Y-%m")
-    forecast = db.load_latest_regime_forecast(next_month)
-    use_forecast = forecast is not None
-
-    if use_forecast:
-        blend_alpha = 0.5 * (asof_alpha or 0.5) + 0.5 * forecast["risk_on_forecast"]
-    else:
-        blend_alpha = asof_alpha
+    # NOTE: prior versions blended an ML regime forecast into blend_alpha here.
+    # That layer was UNVALIDATED -- it fed only live weight generation, never the
+    # walk-forward backtest, so it added an unmeasured degree of freedom to live
+    # trading without appearing in any published Sharpe number. Removed
+    # 2026-06-07 to align live weights with the validated WF path.
+    blend_alpha = asof_alpha
 
     asof_regime_stripped = str(asof_regime).strip()
     if asof_regime_stripped == "Stagflation" and "Stagflation" in allocations:
@@ -1585,7 +1583,6 @@ def run_backtest(pipeline_data: "PipelineData | None" = None) -> dict[str, Any]:
         "asof_date": asof,
         "asof_regime": asof_regime,
         "asof_alpha": asof_alpha,
-        "forecast": forecast,
     }
 
 
@@ -1605,8 +1602,6 @@ def main() -> None:
 
     print("\n[CURRENT] TARGET WEIGHTS")
     print(f"As-of: {result['asof_date'].date()} | Regime: {result['asof_regime']}")
-    if result["forecast"]:
-        print(f"Next month forecast: {result['forecast']['risk_on_forecast']:.3f}")
     for a, w in sorted(result["current_weights"].items(), key=lambda x: -x[1]):
         print(f"  {a:>6}: {w:6.2%}")
 

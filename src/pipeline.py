@@ -78,9 +78,13 @@ def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
         len(pipeline_data.get_prices()),
     )
 
-    # Steps 2–4: Use shared pipeline_data (no re-fetch)
+    # Steps 2–3: Use shared pipeline_data (no re-fetch)
+    # NOTE: the "regime_forecast" step (GradientBoosting ML overlay) was removed
+    # 2026-06-07. It fed only live weight generation, never the walk-forward
+    # backtest -- an unvalidated degree of freedom on top of validated logic.
+    # The model code remains in src/models/regime_forecast.py for future
+    # experimental work but is no longer executed in the daily pipeline.
     steps = [
-        ("regime_forecast", "Regime forecast", _run_regime_forecast, [pipeline_data]),
         ("optimizer", "Portfolio optimization", _run_optimizer, [pipeline_data]),
         ("backtest", "Backtest", _run_backtest, [pipeline_data]),
     ]
@@ -128,7 +132,7 @@ def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
     logger.info("\n" + "=" * 80)
     logger.info("SUMMARY: All steps completed in %.1fs", elapsed)
     logger.info("TIMING BY STEP:")
-    for k in ["data_fetch", "regime_classification", "regime_forecast", "optimizer", "backtest", "auto_rebalance", "daily_report"]:
+    for k in ["data_fetch", "regime_classification", "optimizer", "backtest", "auto_rebalance", "daily_report"]:
         if k in timings:
             logger.info("  %s: %.2fs", k, timings[k])
     logger.info("SUMMARY: Market data fetched once in %.2fs (3 steps reused cache)", timings.get("data_fetch", 0))
@@ -139,11 +143,6 @@ def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
 def _run_regime_classification(api_key: str) -> None:
     from src.models.regime_classifier import RegimeClassifier
     RegimeClassifier(api_key).run()
-
-
-def _run_regime_forecast(pipeline_data: PipelineData) -> None:
-    from src.models.regime_forecast import main as forecast_main
-    forecast_main(pipeline_data=pipeline_data)
 
 
 def _run_optimizer(pipeline_data: PipelineData) -> None:
