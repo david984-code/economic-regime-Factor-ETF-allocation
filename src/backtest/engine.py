@@ -37,10 +37,22 @@ def _avg_alloc(
     regimes: set[str],
     assets: list[str],
 ) -> dict[str, float]:
-    """Average allocation across regimes."""
+    """Average allocation across regimes.
+
+    Falls back to averaging across ALL available regimes if none of the
+    requested regimes have an allocation in the training window. This
+    matters under vintage data, where early walk-forward windows may
+    have insufficient observations of a given regime (e.g. only 1
+    Contraction month in 2010-2014 vintage labels) for the optimizer
+    to fit it.
+    """
     regs = [r for r in regimes if r in allocations]
     if not regs:
-        raise ValueError(f"None of {regimes} found in allocations")
+        # Fallback: use the average of whatever regimes the optimizer did fit
+        regs = list(allocations.keys())
+        if not regs:
+            # No regimes fit at all -- return equal weight
+            return {a: 1.0 / len(assets) for a in assets}
     out: dict[str, float] = dict.fromkeys(assets, 0.0)
     for r in regs:
         for a in assets:

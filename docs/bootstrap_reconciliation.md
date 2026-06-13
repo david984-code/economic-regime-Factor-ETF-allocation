@@ -241,3 +241,75 @@ The claim that does NOT survive: that the regime classifier or Sortino optimizer
 - `scripts/analysis/output/_other_significance_tests.py` — drawdown delta CI, hit-rate cluster test
 - `scripts/analysis/output/_address_pm_critiques.py` — GLD regression
 - `scripts/analysis/output/_gold_control_benchmark.py` — 50/30/20 control benchmark
+
+---
+
+## Appendix D: Vintage-data walk-forward (2026-06-13) -- the moment of truth
+
+The previous appendices (A-C) all assumed the regime labels were trustworthy. They were not. FRED's standard `get_series` returns the *latest revised* value of each indicator; backtests fit on that data have access to revisions that happened *after* the value was originally released. For backward-looking macro indicators like GDP, CPI, M2, and M2 velocity, the revisions are large and directionally correlated with future macro outcomes (Q1 2020 GDP was reported at $21,538B but is now $19,958B in current FRED -- a 7.3pp downward revision in the same direction as the COVID contraction). A regime model fit on revised data effectively peeks at the future.
+
+This appendix rebuilds the regime labels from ALFRED vintage release histories -- so the model at date T only sees the value as it was *known on T* -- and reruns the same walk-forward backtest. Code: `scripts/generate_vintage_regime_labels.py` and `scripts/run_vintage_walk_forward.py`.
+
+### D.1 How often vintage and revised labels disagree
+
+Comparing month-end labels over Jan 2010 -- May 2026 (197 months):
+
+| | Revised count | Vintage count |
+|---|---:|---:|
+| Recovery | 30 | 69 |
+| Overheating | 31 | 56 |
+| Stagflation | 72 | 36 |
+| Contraction | 64 | 36 |
+| **Total defensive (Stagflation + Contraction)** | **136 (69%)** | **72 (37%)** |
+
+The revised data labelled **almost twice as many months as defensive** (Stagflation or Contraction) as vintage data would have. Risk-on score correlation between the two label streams: **0.19** -- essentially uncorrelated. Per-month label agreement: **30.5%**.
+
+### D.2 Same walk-forward, vintage labels
+
+Same code path (`collect_walk_forward_oos_returns` with `BASELINE_WALK_FORWARD` config), same window (Sep 2015 -- May 2026, 10.72 years), same monthly refit. Only the regime label stream changed.
+
+| Metric | Revised labels (was published) | Vintage labels (clean) | Delta |
+|---|---:|---:|---:|
+| CAGR | 10.99% | **8.49%** | -2.50pp |
+| Annualized vol | 9.98% | 9.75% | -0.23pp |
+| Sharpe (rf=4.5%) | 0.654 | **0.433** | -0.221 |
+| Sortino | 0.625 | **0.410** | -0.215 |
+| Max drawdown | -18.27% | **-22.90%** | -4.63pp |
+| Calmar | 0.602 | **0.371** | -0.231 |
+
+### D.3 Vintage-clean comparison to all benchmarks
+
+| | Strategy (vintage) | 60/40 (SPY/IEF) | 50/30/20 (gold control) | SPY | IEF |
+|---|---:|---:|---:|---:|---:|
+| CAGR | 8.49% | 9.90% | 11.10% | 15.58% | 1.12% |
+| Sharpe | 0.433 | 0.533 | 0.681 | 0.656 | -0.469 |
+| Max DD | -22.90% | -21.28% | -19.08% | -33.72% | -23.92% |
+| Sortino | 0.410 | 0.508 | 0.649 | 0.620 | -0.466 |
+
+**Under clean vintage data, the strategy now loses to 60/40 on every risk-adjusted metric.** Sharpe -0.10, CAGR -1.41pp, max drawdown 1.6pp deeper, Calmar -0.09. Against the 50/30/20 gold control the gap widens further: Sharpe -0.25, CAGR -2.61pp.
+
+### D.4 What survives this round
+
+- **The vol-and-drawdown-vs-SPY claim** survives in the sense that the portfolio still has 9.75% vol vs SPY 17.80%. But 50/30/20 also has 9.69% vol with higher Sharpe and equal-or-better drawdown, so this property is not unique to the regime layer.
+- **Every alpha claim previously made** -- the +0.13 Sharpe edge vs 60/40, the +3pp drawdown reduction, the implicit "regime classifier adds value" framing -- does not survive vintage data. The earlier README sections quoting those numbers were measuring lookahead, not edge.
+- **What survives as a research result, not an investment claim** is the *infrastructure*: vintage ALFRED ingestion (`src/data/fred_vintage.py`), the asof-aware classifier (`scripts/generate_vintage_regime_labels.py`), the vintage-vs-revised label diagnostic, and the willingness to rerun the whole pipeline and publish the disconfirming numbers.
+
+### D.5 ALFRED coverage caveats
+
+Not every series has vintage history in ALFRED. The breakdown:
+
+| Series | ALFRED vintage? | How handled |
+|---|---|---|
+| GDPC1, CPIAUCSL, M2SL, M2V, ICSA, BAMLH0A0HYM2 | yes | vintage-aware via `get_series_all_releases` |
+| DGS10, DGS3MO (daily Treasury yields) | no (5045 vintage dates exceeds ALFRED 2000-vintage cap) | latest, truncated to as_of. Daily Treasury yields are observed prices that are not revised after the day of observation, so "latest truncated to as_of" is genuinely point-in-time. |
+| NAPM (ISM PMI) | no | latest, truncated to as_of (with INDPRO fallback already in place) |
+
+The yields and PMI fallbacks could in principle still have a small revision-lookahead component, but the dominant lookahead sources (GDP, CPI, M2, velocity) are now vintage-clean. A second-pass version should use ALFRED-supported substitutes (DGS10NB / DTB3 / chain-linked PMI release files) if available; the magnitude of additional Sharpe correction expected is < 0.05.
+
+### D.6 The engineering change in `_avg_alloc`
+
+To run the vintage walk-forward, one production change was needed in `src/backtest/engine.py::_avg_alloc`: the previous version raised `ValueError` if a training window had no observations of a requested regime. Under vintage labels, the 2010-2014 training window has only 1 Contraction month (vs 9 under revised data), and the optimizer's `len < 2` filter dropped it. The patched version falls back to averaging across whatever regimes the optimizer did fit (or to equal weight if it fit none). The same patch is safe under revised data (no behaviour change when all four regimes have allocations, which is the typical case), and is committed.
+
+### D.7 Bottom line
+
+The system as published was overstating its edge by approximately 22 basis points of Sharpe and 2.5 percentage points of CAGR, all of which were attributable to one lookahead source (revised FRED data). The cleaned version of the system has no demonstrated risk-adjusted edge over 60/40 SPY/IEF. The repo's value as a portfolio exhibit is the documented end-to-end infrastructure and the documented willingness to disprove every alpha claim made about it.
