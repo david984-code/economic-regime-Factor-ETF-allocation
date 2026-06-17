@@ -32,6 +32,29 @@ logger = logging.getLogger(__name__)
 CASH_DAILY_YIELD = RF_DAILY
 
 
+def _expanding_z_score(
+    series: "pd.Series",
+    min_history: int = 12,
+) -> "pd.Series":
+    """Trailing expanding-window z-score with no lookahead.
+
+    At each index i, computes (value_i - mean(values[:i+1])) / std(values[:i+1])
+    using only data available through i. Returns 0.0 where insufficient history
+    or std is near-zero. Used in _compute_hybrid_risk_on for momentum, breadth,
+    volatility, and yield-curve signals.
+    """
+    out: list[float] = []
+    for i in range(len(series)):
+        trailing = series.iloc[: i + 1].dropna()
+        if len(trailing) >= min_history:
+            val = float(series.iloc[i]) if not pd.isna(series.iloc[i]) else 0.0
+            std = float(trailing.std())
+            out.append((val - float(trailing.mean())) / std if std > 1e-10 else 0.0)
+        else:
+            out.append(0.0)
+    return pd.Series(out, index=series.index).fillna(0.0)
+
+
 def _avg_alloc(
     allocations: dict[str, dict[str, float]],
     regimes: set[str],
