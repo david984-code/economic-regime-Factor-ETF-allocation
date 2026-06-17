@@ -1,5 +1,10 @@
-"""Analyze walk-forward results for robustness assessment."""
+"""Analyze walk-forward results for robustness assessment.
 
+Usage:
+    python scripts/analyze_walk_forward.py [--results-csv PATH]
+"""
+
+import argparse
 import sys
 from pathlib import Path
 
@@ -164,4 +169,17 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--results-csv",
+        type=Path,
+        default=None,
+        help="Override the walk-forward results CSV path (default: latest run in DB).",
+    )
+    args = ap.parse_args()
+    if args.results_csv is not None:
+        # Override load_latest at module scope so main() uses this CSV
+        def load_latest() -> pd.DataFrame:  # type: ignore[no-redef]
+            df = pd.read_csv(args.results_csv)
+            return df[df["segment"] != "OVERALL"].copy()
     main()

@@ -1,5 +1,8 @@
 """Run the walk-forward backtest using vintage (point-in-time) regime labels.
 
+Usage:
+    python scripts/run_vintage_walk_forward.py [--no-restore] [--out PATH]
+
 This is the actual moment-of-truth: the WF backtest with revised-data labels
 gave the published CAGR/Sharpe/MaxDD numbers. Re-running with vintage labels
 quantifies how much of the apparent edge was lookahead.
@@ -19,6 +22,7 @@ Output: scripts/analysis/output/vintage_wf_daily_returns.csv
 """
 from __future__ import annotations
 
+import argparse
 import logging
 import shutil
 import sys
@@ -100,6 +104,20 @@ def compute_metrics(daily: pd.Series) -> dict:
 
 
 def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--no-restore",
+        action="store_true",
+        help="Leave vintage labels in place after run (default: restore revised labels).",
+    )
+    ap.add_argument(
+        "--out",
+        type=Path,
+        default=OUT / "vintage_wf_daily_returns.csv",
+        help="Output CSV path for vintage walk-forward daily returns.",
+    )
+    args = ap.parse_args()
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     log = logging.getLogger(__name__)
 
@@ -129,7 +147,8 @@ def main() -> int:
         log.info("  WF complete in %.1fs (%d daily obs)", time.time() - t0, len(oos_daily))
 
         # 4. Save & compute metrics
-        out_csv = OUT / "vintage_wf_daily_returns.csv"
+        out_csv = args.out
+        out_csv.parent.mkdir(parents=True, exist_ok=True)
         oos_daily.to_csv(out_csv, header=["strategy_vintage_wf"])
         log.info("  Saved daily series -> %s", out_csv)
 
@@ -152,12 +171,15 @@ def main() -> int:
             print(f"  {k:<15} {m[k]:>12} {ref[k]:>12} {sign}{delta:>9.2f}")
 
     finally:
-        # 5. Restore original revised labels for safety (don't break the live pipeline)
-        log.info("Restoring revised labels from backup ...")
-        shutil.copy(backup, EXPANDED)
-        if asof_backup.exists():
-            shutil.copy(asof_backup, ASOF)
-        log.info("  Restored.")
+        # 5. Restore original revised labels for safety unless --no-restore
+        if args.no_restore:
+            log.info("--no-restore: leaving vintage labels in place.")
+        else:
+            log.info("Restoring revised labels from backup ...")
+            shutil.copy(backup, EXPANDED)
+            if asof_backup.exists():
+                shutil.copy(asof_backup, ASOF)
+            log.info("  Restored.")
 
     return 0
 
