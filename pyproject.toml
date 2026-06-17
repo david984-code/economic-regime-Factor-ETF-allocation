@@ -24,6 +24,7 @@ dependencies = [
     "pyyaml>=6.0",
     "matplotlib>=3.10.8",
     "twilio>=9.0.0",
+    "tenacity>=9.1.4",
 ]
 
 [project.optional-dependencies]

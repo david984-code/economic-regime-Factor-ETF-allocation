@@ -1,9 +1,37 @@
-"""Retry utilities for transient failures."""
+"""Retry utilities for transient failures.
+
+`retry_on_permission_error` is for local-disk file contention.
+`external_api_retry` is for flaky network calls (FRED, yfinance, IBKR API):
+exponential backoff via tenacity with sensible defaults.
+"""
 
 import time
 from typing import Callable, Optional, TypeVar
 
+import tenacity
+
 T = TypeVar("T")
+
+
+# Exponential-backoff retry for external API calls. Apply as a decorator OR
+# inline via `external_api_retry()(fn)(...)`. Five attempts, waiting 1s, 2s,
+# 4s, 8s, capped at 30s. Does NOT retry on KeyboardInterrupt (you want to
+# bail out of a hung run with Ctrl-C) or on authentication errors.
+external_api_retry = lambda: tenacity.retry(  # noqa: E731
+    stop=tenacity.stop_after_attempt(5),
+    wait=tenacity.wait_exponential(multiplier=1, min=1, max=30),
+    retry=tenacity.retry_if_exception_type(
+        (
+            ConnectionError,
+            TimeoutError,
+            OSError,
+            # tenacity catches generic Exception by default; we want to NOT
+            # retry on auth or bad-input errors. ValueError covers most
+            # "you asked for something invalid" cases from fredapi.
+        )
+    ),
+    reraise=True,
+)
 
 
 def retry_on_permission_error(
