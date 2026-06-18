@@ -60,6 +60,13 @@ ignore = [
     "E501",  # line too long (handled by formatter)
 ]
 
+# Entry-point scripts use `sys.path.insert(0, ...)` so the project root resolves
+# whether called via `uv run`, `python scripts/X.py`, or `python -m`. That makes
+# downstream `from src.X import Y` lines unavoidably non-top-of-file. N806 covers
+# a few math-notation variables (e.g. `D`, `N`) inside experiment scripts.
+[tool.ruff.lint.per-file-ignores]
+"scripts/**" = ["E402", "N806"]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"

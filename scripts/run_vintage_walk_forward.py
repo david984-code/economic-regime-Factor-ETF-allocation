@@ -55,7 +55,6 @@ def build_vintage_expanded() -> pd.DataFrame:
     existing = pd.read_csv(EXPANDED, index_col="date", parse_dates=True)
 
     # Reindex vintage to expanded's full index, then ffill monthly labels to daily
-    cols_to_propagate = ["regime", "risk_on"]
     new_df = existing.copy()
     # Wipe regime + risk_on for in-range dates (2010-01 onward) and refill with vintage
     cutoff = vint.index.min()

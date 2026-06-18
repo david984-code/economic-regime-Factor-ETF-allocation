@@ -217,7 +217,7 @@ def main() -> int:
         "yield_3m": y3_l,
         "m2": m2_l,
         "velocity": vel_l,
-        **{k: v for k, v in opt_l.items()},
+        **dict(opt_l.items()),
     }
 
     end_ts = pd.Timestamp(args.end) if args.end else pd.Timestamp.today()

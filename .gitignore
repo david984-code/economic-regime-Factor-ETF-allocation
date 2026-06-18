@@ -84,3 +84,10 @@ archive/
 reports/
 current_factor_weights.csv
 src/regime_labels_expanded.csv
+
+# IBKR-dependent operational scripts (require live gateway; not useful to anyone cloning)
+scripts/run_paper_trading.py
+scripts/daily_health_check.py
+scripts/test_ibkr_connection.py
+scripts/test_system_end_to_end.py
+scripts/show_portfolio_trends.py

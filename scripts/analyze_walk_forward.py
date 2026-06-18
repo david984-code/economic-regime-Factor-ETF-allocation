@@ -170,7 +170,7 @@ def main(loader=None) -> None:
     if regime_path.exists():
         regimes = pd.read_csv(regime_path, parse_dates=["date"])
         regimes["month"] = pd.to_datetime(regimes["date"]).dt.to_period("M")
-        regime_counts = regimes["regime"].value_counts()
+        regimes["regime"].value_counts()
         # Map each segment's test period to regime
         seg_regimes = []
         for _, row in df.iterrows():
