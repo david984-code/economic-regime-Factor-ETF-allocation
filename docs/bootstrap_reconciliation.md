@@ -304,12 +304,29 @@ Not every series has vintage history in ALFRED. The breakdown:
 | DGS10, DGS3MO (daily Treasury yields) | no (5045 vintage dates exceeds ALFRED 2000-vintage cap) | latest, truncated to as_of. Daily Treasury yields are observed prices that are not revised after the day of observation, so "latest truncated to as_of" is genuinely point-in-time. |
 | NAPM (ISM PMI) | no | latest, truncated to as_of (with INDPRO fallback already in place) |
 
-The yields and PMI fallbacks could in principle still have a small revision-lookahead component, but the dominant lookahead sources (GDP, CPI, M2, velocity) are now vintage-clean. A second-pass version should use ALFRED-supported substitutes (DGS10NB / DTB3 / chain-linked PMI release files) if available; the magnitude of additional Sharpe correction expected is < 0.05.
+Yields and PMI fallbacks still carry a residual lookahead component, but the dominant lookahead sources (GDP, CPI, M2, velocity) are now vintage-clean. A second-pass version should use ALFRED-supported substitutes (DGS10NB / DTB3 / chain-linked PMI release files) where available. **The size of the residual correction was not measured.** An earlier version of this appendix asserted it would be "< 0.05 Sharpe"; that was a guess stated as a bound, not a computed quantity, and has been removed. The correct statement is: the residual revision lookahead from PMI (benchmark-revised annually) and the yield fallbacks is unmeasured, and PMI specifically is benchmark-revised in ways that could move beyond a few basis points. The next iteration should bound it by reading the ISM revision history directly.
 
 ### D.6 The engineering change in `_avg_alloc`
 
 To run the vintage walk-forward, one production change was needed in `src/backtest/engine.py::_avg_alloc`: the previous version raised `ValueError` if a training window had no observations of a requested regime. Under vintage labels, the 2010-2014 training window has only 1 Contraction month (vs 9 under revised data), and the optimizer's `len < 2` filter dropped it. The patched version falls back to averaging across whatever regimes the optimizer did fit (or to equal weight if it fit none). The same patch is safe under revised data (no behaviour change when all four regimes have allocations, which is the typical case), and is committed.
 
-### D.7 Bottom line
+### D.7 Vintage hit rate (added 2026-06-18 in response to PM critique)
 
-The system as published was overstating its edge by approximately 22 basis points of Sharpe and 2.5 percentage points of CAGR, all of which were attributable to one lookahead source (revised FRED data). The cleaned version of the system has no demonstrated risk-adjusted edge over 60/40 SPY/IEF. The repo's value as a portfolio exhibit is the documented end-to-end infrastructure and the documented willingness to disprove every alpha claim made about it.
+A self-criticism that survived peer review: Appendix C.2 reported a **76.3% down-month hit rate vs 60/40** (cluster-aware 95% CI [62%, 90%]) as the only outperformance claim against 60/40 that survived rigorous testing. That number was computed on revised-data labels. After D.1 showed regime-label correlation between vintage and revised was only **0.19** with per-month agreement of **30.5%**, the apples-to-apples thing to do was to rerun the cluster test on vintage labels. This was not done in the original D draft.
+
+Done now. Results, identical methodology to C.2:
+
+| Statistic | Revised (was published) | Vintage (point-in-time) |
+| --- | ---: | ---: |
+| Strategy beats 60/40 in 60/40 down months | 29 / 38 | 22 / 38 |
+| Down-month hit rate | **76.3%** | **57.9%** |
+| Naive Clopper–Pearson 95% CI | [0.62, 1.00] | [0.41, 0.74] |
+| Cluster-aware 6-month-block 95% CI | [0.62, 0.90] | **[0.42, 0.74]** |
+
+**The vintage cluster-aware CI crosses 50%** — the hit rate is no longer statistically distinguishable from chance. Combined with the vintage Sharpe / CAGR / max-drawdown deltas being negative (D.3), this means **no surviving alpha claim against 60/40 remains** under point-in-time labels. The only thing the OOS table still defends is "lower vol and lower max drawdown than SPY" — a portfolio-construction property of the long-bond + gold sleeve, not an alpha claim, and one that 50/30/20 supplies more efficiently.
+
+Reproduce: `python scripts/compute_vintage_hit_rate.py`. The script uses the same 6-month block, the same `seed=20260618`, and the same Clopper–Pearson naive interval as the C.2 computation. The revised parity check inside the script reproduces 29/38 = 76.3% exactly, confirming methodology hasn't changed; only the input labels did.
+
+### D.8 Bottom line
+
+The system as published was overstating its edge by approximately 22 basis points of Sharpe and 2.5 percentage points of CAGR, all of which were attributable to one lookahead source (revised FRED data). The cleaned version of the system has no demonstrated risk-adjusted edge over 60/40 SPY/IEF, and (post D.7) no demonstrated edge in down-month hit rate either. The repo's value as a portfolio exhibit is the documented end-to-end infrastructure and the documented willingness to disprove every alpha claim made about it — including the ones that previously appeared to survive.
