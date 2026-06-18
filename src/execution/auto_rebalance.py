@@ -92,6 +92,7 @@ def _select_base_weights(
 
 def _apply_vol_scaling(prices, base_weights: dict[str, float]) -> dict[str, float]:
     import polars as pl
+
     from src.allocation.vol_scaling import vol_scaled_weights
     from src.config import TICKERS, VOL_LOOKBACK
 

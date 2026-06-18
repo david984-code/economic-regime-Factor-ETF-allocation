@@ -18,7 +18,6 @@ from typing import Any
 from src.config import PROJECT_ROOT
 from src.execution.create_orders import (
     DEFAULT_TAU,
-    OrderPreviewRow,
     PositionRow,
     RebalancePreview,
     create_order_preview,
@@ -27,7 +26,6 @@ from src.execution.create_orders import (
 )
 from src.execution.reporting import RunSummary, new_run_id, utc_now_str, write_run_summary
 from src.execution.safety import (
-    SafetyConfig,
     duplicate_run_refuse,
     pre_trade_checks,
     safety_config_from_paper_config,
@@ -533,7 +531,7 @@ def _resolve_input_paths(args, rebal: dict[str, Any], root: Path) -> dict[str, A
     return {"target_path": target_path, "mock_path": mock_path, "prices_path": prices_path}
 
 
-def _gate_submission(preview, config, rebal, report_dir, summary, safety_cfg) -> "Path | None":
+def _gate_submission(preview, config, rebal, report_dir, summary, safety_cfg) -> Path | None:
     """Run safety + duplicate-run gates; return marker_path if OK, None if blocked."""
     pre_trade_checks(
         preview,
@@ -619,7 +617,7 @@ def _print_dry_run_summary(preview) -> None:
     print("\nDone. No orders submitted.")
 
 
-def _init_run_summary(args) -> "RunSummary":
+def _init_run_summary(args) -> RunSummary:
     return RunSummary(
         run_id=new_run_id(),
         runner="monthly_rebalance_runner",

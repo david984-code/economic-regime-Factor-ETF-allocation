@@ -11,11 +11,9 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from src.allocation.optimizer import _negative_sortino, optimize_allocations_from_data
-from src.config import OPTIMIZER_CASH_PREFERENCE, REGIME_CASH, RF_MONTHLY
-
+from src.config import REGIME_CASH
 
 # ---------------------------------------------------------------------------
 # _negative_sortino math

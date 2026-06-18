@@ -41,7 +41,9 @@ def load_regimes() -> pd.DataFrame:
         db.close()
         path = OUTPUTS_DIR / "regime_labels_expanded.csv"
         if not path.exists():
-            raise FileNotFoundError("No regime data found. Run regime classification first.")
+            raise FileNotFoundError(
+                "No regime data found. Run regime classification first."
+            ) from None
         return pd.read_csv(path, parse_dates=["date"], index_col="date")
 
 
@@ -192,7 +194,7 @@ def optimize_allocations_from_data(
             constraints=_get_constraints(n, regime, risky_assets),
         )
         if result.success:
-            optimal_allocations[regime] = dict(zip(full_asset_list, result.x))
+            optimal_allocations[regime] = dict(zip(full_asset_list, result.x, strict=False))
     return optimal_allocations
 
 
@@ -255,7 +257,7 @@ def run_optimizer(pipeline_data: "PipelineData | None" = None) -> None:
         )
 
         if result.success:
-            optimal_allocations[regime] = dict(zip(full_asset_list, result.x))
+            optimal_allocations[regime] = dict(zip(full_asset_list, result.x, strict=False))
             logger.info("Optimized: %s", regime)
         else:
             logger.error("Failure for %s: %s", regime, result.message)

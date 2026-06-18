@@ -357,16 +357,17 @@ def run_parity_check(df: pd.DataFrame) -> tuple[bool, dict]:
         mismatches["old_regime"] = old_regimes[~match].values
         mismatches["new_regime"] = new_regimes[~match].values
 
+    all_match = match_count == total
     report = {
         "match_count": match_count,
         "total": total,
-        "all_match": match_count == total,
+        "all_match": all_match,
         "mismatches": mismatches,
         "old_time_sec": old_time,
         "new_time_sec": new_time,
         "speedup": old_time / new_time if new_time > 0 else float("inf"),
     }
-    return report["all_match"], report
+    return all_match, report
 
 
 def main() -> None:

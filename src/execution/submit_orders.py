@@ -92,7 +92,7 @@ def submit_paper_orders(
     results: list[SubmittedOrderResult] = []
     trades: list[Any] = []
     try:
-        for i, o in enumerate(proposed_orders):
+        for _i, o in enumerate(proposed_orders):
             symbol = getattr(o, "symbol", None) or (o.get("symbol") if isinstance(o, dict) else "")
             side = getattr(o, "side", None) or (o.get("side") if isinstance(o, dict) else "")
             shares = int(
@@ -108,6 +108,7 @@ def submit_paper_orders(
             action = "BUY" if side.upper() == "BUY" else "SELL"
             contract = Stock(symbol, "SMART", "USD")
             ot = (order_type or "MKT").upper()
+            order: LimitOrder | MarketOrder
             if ot == "LMT" and price_used > 0:
                 order = LimitOrder(action, float(shares), price_used)
             else:

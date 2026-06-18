@@ -6,7 +6,8 @@ exponential backoff via tenacity with sensible defaults.
 """
 
 import time
-from typing import Callable, Optional, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 import tenacity
 
@@ -38,7 +39,7 @@ def retry_on_permission_error(
     func: Callable[[], T],
     max_attempts: int = 4,
     base_wait: float = 0.5,
-    logger: Optional[object] = None,
+    logger: object | None = None,
 ) -> T:
     """Retry func with exponential backoff on PermissionError.
 

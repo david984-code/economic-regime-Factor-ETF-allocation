@@ -3,7 +3,6 @@
 import logging
 import time
 from contextlib import contextmanager
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -14,8 +13,8 @@ class Timer:
     def __init__(self, name: str, log_level: int = logging.INFO):
         self.name = name
         self.log_level = log_level
-        self.start_time = None
-        self.elapsed_ms = None
+        self.start_time: float | None = None
+        self.elapsed_ms: float | None = None
 
     def __enter__(self):
         self.start_time = time.perf_counter()

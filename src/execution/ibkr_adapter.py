@@ -6,7 +6,6 @@ No order placement. Config-driven; credentials via environment variables.
 
 import logging
 import os
-from pathlib import Path
 from typing import Any
 
 from src.config import PROJECT_ROOT

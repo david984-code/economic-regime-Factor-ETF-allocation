@@ -29,7 +29,7 @@ def load_cached_series(series_id: str) -> pd.Series | None:
         s = df["value"].squeeze()
         if isinstance(s, pd.DataFrame):
             s = s.iloc[:, 0]
-        s.index = pd.to_datetime(s.index)
+        s.index = pd.to_datetime(s.index)  # type: ignore[method-assign]
         return s.sort_index()
     except Exception as e:
         logger.warning("[FRED cache] Failed to load %s: %s", series_id, e)

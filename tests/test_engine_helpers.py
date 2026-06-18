@@ -16,7 +16,6 @@ import pytest
 
 from src.backtest.engine import _blend_alloc, _equal_weight_alloc, _smooth_regime_labels
 
-
 # ---------------------------------------------------------------------------
 # _blend_alloc: weight blending between risk-on and risk-off allocations
 # ---------------------------------------------------------------------------

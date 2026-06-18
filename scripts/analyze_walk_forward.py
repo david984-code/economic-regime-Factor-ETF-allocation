@@ -215,7 +215,7 @@ def main(loader=None) -> None:
     if spy_beat < 50:
         print("  [!] Strategy beats SPY in fewer than half of segments")
     if neg_sharpe_segs > n * 0.2:
-        print(f"  [!] >20% of segments have negative Sharpe")
+        print("  [!] >20% of segments have negative Sharpe")
     if avg_turnover > 3 and avg_sharpe < 0.5:
         print("  [!] High turnover relative to modest Sharpe")
 

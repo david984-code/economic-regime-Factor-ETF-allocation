@@ -10,6 +10,8 @@ import pytest
 
 from src.models.regime_classifier import (
     RegimeClassifier as EconomicRegimeClassifier,
+)
+from src.models.regime_classifier import (
     run_parity_check,
 )
 

@@ -6,7 +6,7 @@ momentum features) to avoid repeated yfinance calls.
 
 import logging
 import time
-from typing import Sequence
+from collections.abc import Sequence
 
 import pandas as pd
 

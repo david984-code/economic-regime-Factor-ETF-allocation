@@ -682,7 +682,7 @@ def _compute_hybrid_risk_on(
 
     # Compute primary lookback momentum
     primary_signal_list = []
-    for i, date in enumerate(spy_monthly.index):
+    for i, _date in enumerate(spy_monthly.index):
         if i < market_lookback_months:
             primary_signal_list.append(np.nan)
         else:
@@ -702,7 +702,7 @@ def _compute_hybrid_risk_on(
     # If ensemble, compute 12M momentum as well
     if momentum_12m_weight > 0:
         momentum_12m_list = []
-        for i, date in enumerate(spy_monthly.index):
+        for i, _date in enumerate(spy_monthly.index):
             if i < 12:
                 momentum_12m_list.append(np.nan)
             else:
@@ -1112,7 +1112,6 @@ def _compute_returns_and_setup(
     # For asset momentum methods, we return DataFrames with monthly weights
     # For other methods, we return static dicts
     w_risk_on_dynamic = None
-    w_risk_off_dynamic = None
 
     if portfolio_construction_method == "optimizer":
         w_risk_on = _avg_alloc(allocations, RISK_ON_REGIMES, assets_to_use)
@@ -1217,7 +1216,7 @@ def _compute_returns_and_setup(
                 regime_df[f"w_risk_on_{asset}"] = 0.0
 
     equal_weight_returns = returns[tickers_to_use].mean(axis=1)
-    return returns, regime_df, w_risk_on, w_risk_off, equal_weight_returns
+    return returns, regime_df, w_risk_on, w_risk_off, equal_weight_returns  # type: ignore[return-value]
 
 
 def _run_backtest_loop(
@@ -1378,7 +1377,7 @@ def _run_backtest_vectorized(
 
     weight_cols = [a for a in ASSETS if a in returns.columns]
     weights = np.zeros((len(dates), len(weight_cols)))
-    asset_idx = {a: i for i, a in enumerate(weight_cols)}
+    {a: i for i, a in enumerate(weight_cols)}
     cash_idx = weight_cols.index("cash") if "cash" in weight_cols else None
     scale_at_rebalance: list[
         tuple[pd.Timestamp, float]
@@ -1395,7 +1394,6 @@ def _run_backtest_vectorized(
     has_dynamic_risk_on = any(f"w_risk_on_{a}" in regime_df.columns for a in ASSETS)
 
     # Turnover attribution: store prev risk_on and std for incremental decomposition
-    prev_ro: float | None = None
     prev_std_dict: dict[str, float | None] | None = None
     attribution_records: list[dict] = []
 
@@ -1496,7 +1494,6 @@ def _run_backtest_vectorized(
                         "realized_vol_avg": realized_vol_avg,
                     }
                 )
-                prev_ro = alpha
                 prev_std_dict = dict(std_dict)
 
             # Portfolio-level volatility targeting (post-construction, no leverage)
@@ -1531,13 +1528,13 @@ def _run_backtest_vectorized(
         weights_df = pd.DataFrame(weights, index=dates, columns=weight_cols)
         scale_series = None
         if vol_target_annual > 0 and scale_at_rebalance:
-            scale_dates, scale_vals = zip(*scale_at_rebalance)
+            scale_dates, scale_vals = zip(*scale_at_rebalance, strict=False)
             scale_series = pd.Series(
                 scale_vals, index=pd.DatetimeIndex(scale_dates), name="vol_scale"
             )
         if return_turnover_attribution and attribution_records:
             att_df = pd.DataFrame(attribution_records).set_index("date")
-            return pd.Series(portfolio_ret, index=dates), weights_df, scale_series, att_df
+            return pd.Series(portfolio_ret, index=dates), weights_df, scale_series, att_df  # type: ignore[return-value]
         if scale_series is not None:
             return pd.Series(portfolio_ret, index=dates), weights_df, scale_series
         return pd.Series(portfolio_ret, index=dates), weights_df
@@ -1665,7 +1662,7 @@ def run_backtest_with_allocations(
         return_turnover_attribution=return_turnover_attribution,
         use_post_blend_inv_vol=use_post_blend_inv_vol,
     )
-    return result
+    return result  # type: ignore[return-value]
 
 
 def run_backtest(pipeline_data: "PipelineData | None" = None) -> dict[str, Any]:

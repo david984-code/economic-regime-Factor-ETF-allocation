@@ -1,7 +1,7 @@
 """Market data ingestion via yfinance."""
 
 import logging
-from typing import Sequence
+from collections.abc import Sequence
 
 import pandas as pd
 import yfinance as yf
@@ -14,15 +14,12 @@ logger = logging.getLogger(__name__)
 def _extract_close_prices(px: pd.DataFrame) -> pd.DataFrame:
     """Extract Adj Close (or Close) from yfinance result. Handles MultiIndex."""
     if isinstance(px.columns, pd.MultiIndex):
-        if "Adj Close" in px.columns.levels[0]:
-            out = px["Adj Close"].copy()
-        else:
-            out = px["Close"].copy()
-    else:
-        out = px["Adj Close"] if "Adj Close" in px.columns else px["Close"]
-        if isinstance(out, pd.Series):
-            out = out.to_frame()
-    return out
+        field = "Adj Close" if "Adj Close" in px.columns.levels[0] else "Close"
+        # px[field] for a top-level MultiIndex key returns a DataFrame; copy preserves type.
+        return pd.DataFrame(px[field]).copy()
+    field2 = "Adj Close" if "Adj Close" in px.columns else "Close"
+    raw = px[field2]
+    return raw.to_frame() if isinstance(raw, pd.Series) else pd.DataFrame(raw)
 
 
 def fetch_prices(

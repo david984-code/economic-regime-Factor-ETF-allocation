@@ -6,7 +6,7 @@ from src.data.fred_ingestion import (
     fetch_fred_optional,
     fetch_fred_optional_cached,
 )
-from src.data.market_ingestion import fetch_prices, fetch_monthly_returns
+from src.data.market_ingestion import fetch_monthly_returns, fetch_prices
 from src.data.pipeline_data import PipelineData
 
 __all__ = [

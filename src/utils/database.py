@@ -114,7 +114,7 @@ class Database:
         allocations: dict[str, dict[str, float]] = {}
         for regime in df["regime"].unique():
             regime_df = df[df["regime"] == regime]
-            allocations[regime] = dict(zip(regime_df["asset"], regime_df["weight"]))
+            allocations[regime] = dict(zip(regime_df["asset"], regime_df["weight"], strict=False))
         return allocations
 
     def save_backtest_results(

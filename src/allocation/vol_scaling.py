@@ -1,7 +1,5 @@
 """Inverse-volatility weight scaling."""
 
-from typing import Any
-
 import numpy as np
 import polars as pl
 
@@ -67,7 +65,7 @@ def vol_scaled_weights(
 
     vol_pl = trailing_rets_pl.select([pl.col(col).std() for col in risky_assets])
     vol_values = vol_pl.row(0)
-    vol_dict = dict(zip(risky_assets, vol_values))
+    vol_dict = dict(zip(risky_assets, vol_values, strict=False))
     valid_vols = [v for v in vol_dict.values() if v is not None and not np.isnan(v)]
     if not valid_vols:
         total = sum(w.values())
