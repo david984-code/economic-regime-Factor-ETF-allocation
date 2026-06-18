@@ -11,7 +11,8 @@ jobs:
     # The single most important thing this CI catches: a missing src file that
     # was used locally but never committed (e.g. src/utils/ticker_universe.py
     # which sat uncommitted from 2026-03-26 until 2026-06-07 -- making every
-    # fresh clone fail at import).
+    # fresh clone fail at import). The execution/ modules went uncommitted
+    # the same way until 2026-06-18 (commit 6c163e5).
     name: Fresh-clone import smoke test
     runs-on: ubuntu-latest
 
@@ -26,8 +27,8 @@ jobs:
       - name: Set up Python 3.11
         run: uv python install 3.11
 
-      - name: Sync dependencies (lockfile)
-        run: uv sync --frozen
+      - name: Sync dependencies (lockfile, all extras + groups)
+        run: uv sync --frozen --all-extras --all-groups
 
       - name: Verify all top-level src modules import
         run: |
@@ -63,6 +64,33 @@ jobs:
           print(f'\nAll {len(mods)} top-level modules import cleanly.')
           "
 
+  lint:
+    name: ruff + mypy
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: latest
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Sync dependencies (lockfile, all extras + groups)
+        run: uv sync --frozen --all-extras --all-groups
+
+      - name: ruff check
+        run: uv run ruff check .
+
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+      - name: mypy src
+        run: uv run mypy src
+
   tests:
     name: pytest
     runs-on: ubuntu-latest
@@ -78,8 +106,8 @@ jobs:
       - name: Set up Python 3.11
         run: uv python install 3.11
 
-      - name: Sync dependencies (lockfile)
-        run: uv sync --frozen
+      - name: Sync dependencies (lockfile, all extras + groups)
+        run: uv sync --frozen --all-extras --all-groups
 
       - name: Run pytest
         run: uv run pytest -q --tb=short
