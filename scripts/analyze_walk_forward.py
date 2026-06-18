@@ -35,8 +35,8 @@ def load_latest() -> pd.DataFrame:
     return df
 
 
-def main() -> None:
-    df = load_latest()
+def main(loader=None) -> None:
+    df = (loader or load_latest)()
     if df.empty:
         print("No segment data found.")
         return
@@ -178,8 +178,12 @@ if __name__ == "__main__":
     )
     args = ap.parse_args()
     if args.results_csv is not None:
-        # Override load_latest at module scope so main() uses this CSV
-        def load_latest() -> pd.DataFrame:  # type: ignore[no-redef]
+        # Pass a one-shot loader into main() so the CLI override actually
+        # routes through. The previous version defined load_latest() inside
+        # this if-block, which created a local that main() never saw.
+        def _load_from_arg() -> pd.DataFrame:
             df = pd.read_csv(args.results_csv)
             return df[df["segment"] != "OVERALL"].copy()
-    main()
+        main(loader=_load_from_arg)
+    else:
+        main()
