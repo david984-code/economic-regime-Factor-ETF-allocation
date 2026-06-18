@@ -1,5 +1,9 @@
 # Economic Regime Factor ETF Allocation
 
+[![CI](https://github.com/david984-code/economic-regime-Factor-ETF-allocation/actions/workflows/ci.yml/badge.svg)](https://github.com/david984-code/economic-regime-Factor-ETF-allocation/actions/workflows/ci.yml)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A macro-regime-aware ETF allocation system: classify the macro environment from FRED data, optimize a multi-asset portfolio under regime-specific constraints, rebalance monthly via the Interactive Brokers API.
 
 ## Headline finding (read first)
@@ -155,6 +159,9 @@ Full methodology references:
 
 - **Walk-forward design and OOS construction:** [docs/WALK_FORWARD_EVALUATION.md](docs/WALK_FORWARD_EVALUATION.md)
 - **Statistical significance audit (centered block bootstrap):** [docs/bootstrap_reconciliation.md](docs/bootstrap_reconciliation.md)
+- **Continuous-improvement workflow** (how I decide what to test next): [docs/CONTINUOUS_IMPROVEMENT.md](docs/CONTINUOUS_IMPROVEMENT.md)
+- **Future extensions** (open research questions): [docs/FUTURE_EXTENSIONS.md](docs/FUTURE_EXTENSIONS.md)
+- **Paper-trading setup** (IBKR + Windows Task Scheduler): [docs/GETTING_STARTED_PAPER_TRADING.md](docs/GETTING_STARTED_PAPER_TRADING.md), [docs/SYSTEM_CHECKLIST.md](docs/SYSTEM_CHECKLIST.md), [docs/TEST_TODAY_CHECKLIST.md](docs/TEST_TODAY_CHECKLIST.md)
 
 ## FRED API key
 
