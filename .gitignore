@@ -10,7 +10,7 @@ __pycache__/
 
 # uv
 .python-version
-uv.lock
+# uv.lock IS committed -- CI runs `uv sync --frozen` for reproducible builds
 
 # Build artifacts
 dist/
