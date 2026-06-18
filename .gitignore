@@ -70,3 +70,17 @@ secrets.yaml
 secrets.yml
 credentials.json
 credentials.yaml
+
+# ---- Local-only artifacts (not part of the published repo) -------------
+# Personal scratch / diagnostic one-offs (underscore-prefix convention)
+scripts/_*
+
+# Windows-specific launchers + scheduler scripts with hardcoded local paths
+scripts/launch_*.bat
+scripts/setup_windows_scheduler.ps1
+
+# Local snapshots and run reports
+archive/
+reports/
+current_factor_weights.csv
+src/regime_labels_expanded.csv
