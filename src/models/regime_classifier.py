@@ -83,7 +83,13 @@ def build_classified_macro_frame(
 ) -> pd.DataFrame:
     """Full macro pipeline through discrete regime labels."""
     df_feat = build_macro_dataframe(
-        gdp, cpi, yield_10y, yield_3m, m2, velocity, hf_monthly=hf_monthly,
+        gdp,
+        cpi,
+        yield_10y,
+        yield_3m,
+        m2,
+        velocity,
+        hf_monthly=hf_monthly,
     )
     df_feat = add_z_scores(df_feat)
     df_feat = calculate_macro_score(df_feat)
@@ -160,6 +166,7 @@ class RegimeClassifier:
         t0 = time.perf_counter()
         if use_local_cache:
             from src.data.fred_ingestion import fetch_fred_core_cached, fetch_fred_optional_cached
+
             gdp, cpi, yield_10y, yield_3m, m2, velocity = fetch_fred_core_cached(
                 self.api_key, end_date=end_date
             )
@@ -173,14 +180,18 @@ class RegimeClassifier:
 
         # --- Publication-lag-aware + legacy pipelines (comparison) -------------
         t0 = time.perf_counter()
-        hf_monthly_legacy = (
-            resample_high_freq_to_monthly_legacy(hf_raw) if hf_raw else None
-        )
+        hf_monthly_legacy = resample_high_freq_to_monthly_legacy(hf_raw) if hf_raw else None
         gdp_l, cpi_l, y10_l, y3_l, m2_l, vel_l = resample_to_monthly_legacy(
             gdp, cpi, yield_10y, yield_3m, m2, velocity
         )
         df_legacy = build_classified_macro_frame(
-            gdp_l, cpi_l, y10_l, y3_l, m2_l, vel_l, hf_monthly_legacy,
+            gdp_l,
+            cpi_l,
+            y10_l,
+            y3_l,
+            m2_l,
+            vel_l,
+            hf_monthly_legacy,
         )
         timings["legacy_pipeline"] = time.perf_counter() - t0
 
@@ -193,7 +204,13 @@ class RegimeClassifier:
 
         t0 = time.perf_counter()
         df = build_classified_macro_frame(
-            gdp_a, cpi_a, y10_a, y3_a, m2_a, vel_a, hf_monthly,
+            gdp_a,
+            cpi_a,
+            y10_a,
+            y3_a,
+            m2_a,
+            vel_a,
+            hf_monthly,
         )
         timings["feature_asof"] = time.perf_counter() - t0
 
@@ -368,5 +385,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     import logging
+
     logging.basicConfig(level=logging.INFO)
     main()

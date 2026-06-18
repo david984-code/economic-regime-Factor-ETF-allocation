@@ -16,6 +16,7 @@ Caches release histories to a single parquet per series so the full
 walk-forward backtest only needs one API call per series rather than
 one per (series, month) pair.
 """
+
 from __future__ import annotations
 
 import logging
@@ -54,6 +55,7 @@ def fetch_all_releases(api_key: str, series_id: str, use_cache: bool = True) -> 
         return df
 
     from fredapi import Fred
+
     fred = Fred(api_key=api_key)
     logger.info("Fetching ALFRED vintage history for %s ...", series_id)
     df = fred.get_series_all_releases(series_id)
@@ -92,7 +94,7 @@ def fetch_vintage_core(
     Returns dict series_name -> release-history DataFrame.
     """
     series_map = {
-        "gdp": "GDPC1",          # real GDP (chained 2017 $); ALFRED-supported with vintage
+        "gdp": "GDPC1",  # real GDP (chained 2017 $); ALFRED-supported with vintage
         "cpi": "CPIAUCSL",
         "yield_10y": "DGS10",
         "yield_3m": "DGS3MO",

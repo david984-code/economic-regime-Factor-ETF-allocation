@@ -81,6 +81,7 @@ def _select_base_weights(
 ) -> dict[str, float]:
     from src.backtest.engine import _avg_alloc, _blend_alloc
     from src.config import ASSETS, REGIME_ALIASES, RISK_OFF_REGIMES, RISK_ON_REGIMES
+
     w_risk_on = _avg_alloc(allocations, RISK_ON_REGIMES, ASSETS)
     w_risk_off = _avg_alloc(allocations, RISK_OFF_REGIMES, ASSETS)
     regime_mapped = REGIME_ALIASES.get(regime, regime)
@@ -93,12 +94,17 @@ def _apply_vol_scaling(prices, base_weights: dict[str, float]) -> dict[str, floa
     import polars as pl
     from src.allocation.vol_scaling import vol_scaled_weights
     from src.config import TICKERS, VOL_LOOKBACK
+
     returns = prices[TICKERS].pct_change().dropna()
     trailing_pl = pl.from_pandas(returns.tail(VOL_LOOKBACK))
     scaled = vol_scaled_weights(base_weights, trailing_pl, list(TICKERS))
     logger.info(
         "Target weights: %s",
-        {k: f"{v:.3f}" for k, v in sorted(scaled.items(), key=lambda x: x[1], reverse=True) if v > 0.005},
+        {
+            k: f"{v:.3f}"
+            for k, v in sorted(scaled.items(), key=lambda x: x[1], reverse=True)
+            if v > 0.005
+        },
     )
     return {k: float(v) for k, v in scaled.items() if v > 0.001}
 
@@ -156,6 +162,7 @@ def _build_preview(config: dict[str, Any], csv_path, live, result: dict[str, Any
     """Run dry-run preview and stash order summary into result."""
     from src.execution.create_orders import DEFAULT_TAU
     from src.execution.monthly_rebalance_runner import run_dry_run
+
     rebal = config.get("rebalance") or {}
     tau = float(rebal.get("tau", DEFAULT_TAU))
     report_dir = OUTPUTS_DIR / "rebalance" / "reports"
@@ -174,8 +181,7 @@ def _build_preview(config: dict[str, Any], csv_path, live, result: dict[str, Any
     result["turnover"] = preview.turnover_one_way
     result["order_count"] = len(preview.proposed_orders)
     result["orders"] = [
-        {"symbol": o.symbol, "side": o.side, "shares": o.shares}
-        for o in preview.proposed_orders
+        {"symbol": o.symbol, "side": o.side, "shares": o.shares} for o in preview.proposed_orders
     ]
     return preview, report_dir, rebal
 
@@ -187,6 +193,7 @@ def _check_safety_gates(preview, config, rebal, report_dir, result: dict[str, An
         pre_trade_checks,
         safety_config_from_paper_config,
     )
+
     safety_cfg = safety_config_from_paper_config(config)
     marker_path = report_dir / "last_paper_submission.json"
     if rebal.get("duplicate_run_protection", True) and duplicate_run_refuse(marker_path):
@@ -208,6 +215,7 @@ def _reconcile_post_trade(weights, config, report_dir, result: dict[str, Any]) -
     """Best-effort post-trade reconciliation; failures are non-fatal."""
     try:
         from src.execution.reconcile_post_trade import run_reconciliation
+
         recon_client_id = config.get("reconciliation_client_id", 2)
         rec = run_reconciliation(weights, report_dir=report_dir, client_id_override=recon_client_id)
         result["reconciliation_max_delta"] = rec.max_abs_delta
@@ -222,6 +230,7 @@ def _submit_with_safety(
     """Run safety checks, submit paper orders, reconcile post-trade."""
     from src.execution.safety import write_submission_marker
     from src.execution.submit_orders import submit_paper_orders
+
     marker_path = _check_safety_gates(preview, config, rebal, report_dir, result)
     if marker_path is None:
         return
@@ -275,6 +284,7 @@ def run_auto_rebalance() -> dict[str, Any]:
     if config is None:
         return result
     from src.execution.monthly_rebalance_runner import fetch_live_positions_and_nav
+
     live = fetch_live_positions_and_nav()
     if live is None:
         result["action"] = "dry_run"

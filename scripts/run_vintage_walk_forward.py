@@ -20,6 +20,7 @@ Steps:
 
 Output: scripts/analysis/output/vintage_wf_daily_returns.csv
 """
+
 from __future__ import annotations
 
 import argparse
@@ -85,8 +86,7 @@ def compute_metrics(daily: pd.Series) -> dict:
     sharpe_v = excess.mean() / excess.std(ddof=1) * np.sqrt(252)
     dn = excess[excess < 0]
     sortino_v = (
-        excess.mean() / np.sqrt((dn ** 2).mean()) * np.sqrt(252)
-        if len(dn) > 1 else float("nan")
+        excess.mean() / np.sqrt((dn**2).mean()) * np.sqrt(252) if len(dn) > 1 else float("nan")
     )
     w = (1 + r).cumprod()
     mdd = (w / w.cummax() - 1).min()
@@ -142,6 +142,7 @@ def main() -> int:
         log.info("Running walk-forward OOS with vintage labels ...")
         from src.config import BASELINE_WALK_FORWARD
         from src.evaluation.walk_forward import collect_walk_forward_oos_returns
+
         t0 = time.time()
         oos_daily = collect_walk_forward_oos_returns(use_vol_regime=False, **BASELINE_WALK_FORWARD)
         log.info("  WF complete in %.1fs (%d daily obs)", time.time() - t0, len(oos_daily))
@@ -163,8 +164,14 @@ def main() -> int:
         print()
         print(f"  {'Metric':<15} {'Vintage':>12} {'Published':>12} {'Delta':>10}")
         print(f"  {'-' * 50}")
-        ref = {"CAGR_pct": 10.99, "Vol_pct": 9.98, "Sharpe": 0.654,
-               "Sortino": 0.625, "MaxDD_pct": -18.27, "Calmar": 0.602}
+        ref = {
+            "CAGR_pct": 10.99,
+            "Vol_pct": 9.98,
+            "Sharpe": 0.654,
+            "Sortino": 0.625,
+            "MaxDD_pct": -18.27,
+            "Calmar": 0.602,
+        }
         for k in ["CAGR_pct", "Vol_pct", "Sharpe", "Sortino", "MaxDD_pct", "Calmar"]:
             delta = m[k] - ref[k]
             sign = "+" if delta >= 0 else ""

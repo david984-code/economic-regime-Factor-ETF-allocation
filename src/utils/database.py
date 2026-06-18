@@ -117,7 +117,9 @@ class Database:
             allocations[regime] = dict(zip(regime_df["asset"], regime_df["weight"]))
         return allocations
 
-    def save_backtest_results(self, metrics: dict[str, float], bench_metrics: dict[str, float]) -> None:
+    def save_backtest_results(
+        self, metrics: dict[str, float], bench_metrics: dict[str, float]
+    ) -> None:
         """Save backtest performance metrics."""
         cursor = self.conn.cursor()
         cursor.execute(

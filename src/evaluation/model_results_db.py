@@ -308,9 +308,7 @@ def get_latest_run() -> dict[str, Any] | None:
     """Return metadata for the most recent run, or None if no runs exist."""
     conn = _get_conn()
     try:
-        cur = conn.execute(
-            "SELECT * FROM model_runs ORDER BY created_at DESC LIMIT 1"
-        )
+        cur = conn.execute("SELECT * FROM model_runs ORDER BY created_at DESC LIMIT 1")
         row = cur.fetchone()
         if row is None:
             return None
@@ -347,9 +345,7 @@ def compare_runs(run_id_1: str, run_id_2: str) -> dict[str, Any]:
         rows = cur.fetchall()
         cols = [d[0] for d in cur.description]
         if len(rows) == 0:
-            raise ValueError(
-                f"Neither run_id found. run_id_1={run_id_1!r}, run_id_2={run_id_2!r}"
-            )
+            raise ValueError(f"Neither run_id found. run_id_1={run_id_1!r}, run_id_2={run_id_2!r}")
         found_ids = {r[0] for r in rows}
         if run_id_1 not in found_ids:
             raise ValueError(f"run_id_1 not found: {run_id_1!r}")

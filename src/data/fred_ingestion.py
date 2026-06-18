@@ -142,7 +142,9 @@ def _fetch_fred_optional_impl(
                 src = "api"
             if len(s) > 12:
                 out[name] = s
-                logger.info("FRED optional: %s (%s) latest %s [%s]", name, series_id, s.index.max(), src)
+                logger.info(
+                    "FRED optional: %s (%s) latest %s [%s]", name, series_id, s.index.max(), src
+                )
         except Exception as e:
             logger.debug("FRED %s (%s) failed: %s", name, series_id, e)
 

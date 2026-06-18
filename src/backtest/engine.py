@@ -91,12 +91,12 @@ def _compute_asset_momentum_timeseries(
     lookback_months: int,
 ) -> pd.DataFrame:
     """Compute momentum for each asset as a time series (no lookahead).
-    
+
     Args:
         prices: Daily price DataFrame.
         assets: List of assets to compute momentum for.
         lookback_months: Lookback window in months.
-    
+
     Returns:
         DataFrame with monthly momentum for each asset (expanding window, no lookahead).
     """
@@ -135,13 +135,13 @@ def _equal_weight_alloc(
     risk_off_sleeve: list[str] | None = None,
 ) -> dict[str, float]:
     """Equal-weight allocation across assets with separate risk-on/risk-off sleeves.
-    
+
     Args:
         assets: Full list of assets (for structure).
         is_risk_on: If True, equal weight risk-on sleeve. If False, equal weight risk-off sleeve.
         risk_on_sleeve: Custom list of risk-on assets (defaults to base universe).
         risk_off_sleeve: Custom list of risk-off assets (defaults to base universe).
-    
+
     Returns:
         Dict with equal weights for selected sleeve, zero for others.
     """
@@ -169,14 +169,14 @@ def _compute_asset_momentum_allocations_timeseries(
     risk_on_sleeve: list[str] | None = None,
 ) -> pd.DataFrame:
     """Compute dynamic equal-weight allocations based on asset momentum (monthly).
-    
+
     Args:
         momentum_df: Monthly momentum DataFrame (from _compute_asset_momentum_timeseries).
         assets: Full list of assets.
         filter_method: 'positive' (only positive momentum), 'top_n' (top N by momentum).
         top_n: Number of top assets to select (if filter_method='top_n').
         risk_on_sleeve: Custom list of risk-on assets (defaults to base universe).
-    
+
     Returns:
         DataFrame with monthly risk-on allocation weights for each asset.
     """
@@ -197,12 +197,16 @@ def _compute_asset_momentum_allocations_timeseries(
 
             # Fallback: if no assets qualify, use top 3
             if len(selected) == 0:
-                sorted_assets = sorted(risk_on_assets, key=lambda a: momentum_row.get(a, -999), reverse=True)
+                sorted_assets = sorted(
+                    risk_on_assets, key=lambda a: momentum_row.get(a, -999), reverse=True
+                )
                 selected = sorted_assets[:3]
 
         elif filter_method == "top_n":
             # Select top N by momentum
-            sorted_assets = sorted(risk_on_assets, key=lambda a: momentum_row.get(a, -999), reverse=True)
+            sorted_assets = sorted(
+                risk_on_assets, key=lambda a: momentum_row.get(a, -999), reverse=True
+            )
             selected = sorted_assets[:top_n]
 
         else:
@@ -245,7 +249,7 @@ def _risk_parity_alloc(
 
 def _heuristic_alloc(is_risk_on: bool) -> dict[str, float]:
     """Fixed heuristic allocation using simple rules.
-    
+
     Risk-on: 60% equity, 30% quality/value, 10% bonds
     Risk-off: 20% equity, 10% quality, 70% bonds
     """
@@ -281,7 +285,6 @@ def _heuristic_alloc(is_risk_on: bool) -> dict[str, float]:
         }
 
 
-
 def _blend_alloc(
     w_off: dict[str, float],
     w_on: dict[str, float],
@@ -291,8 +294,7 @@ def _blend_alloc(
     """Blend risk-off and risk-on allocations by alpha (0=off, 1=on)."""
     alpha = float(np.clip(alpha, 0.0, 1.0))
     w = {
-        a: (1.0 - alpha) * float(w_off.get(a, 0.0))
-        + alpha * float(w_on.get(a, 0.0))
+        a: (1.0 - alpha) * float(w_off.get(a, 0.0)) + alpha * float(w_on.get(a, 0.0))
         for a in assets
     }
     s = sum(w.values())
@@ -307,12 +309,12 @@ def _compute_vol_scaling(
     vol_lookback_days: int = 20,
 ) -> pd.Series:
     """Compute volatility scaling factor (no lookahead).
-    
+
     Args:
         prices: Daily price DataFrame with SPY column.
         vol_scaling_method: One of 'none', 'realized_20d', 'realized_63d', 'percentile'.
         vol_lookback_days: Lookback for realized vol (20 or 63).
-    
+
     Returns:
         Daily scaling factor series (0.5 to 1.5, where 1.0 = no scaling).
     """
@@ -340,7 +342,7 @@ def _compute_vol_scaling(
                 scaling_factors.append(1.0)
             else:
                 # Use expanding window for long-run average
-                trailing_vols = realized_vol.iloc[:i+1].dropna()
+                trailing_vols = realized_vol.iloc[: i + 1].dropna()
                 if len(trailing_vols) >= lookback * 2:  # Need sufficient history
                     long_run_avg = trailing_vols.mean()
                     current_vol = realized_vol.iloc[i]
@@ -369,7 +371,7 @@ def _compute_vol_scaling(
                 scaling_factors.append(1.0)
             else:
                 # Use expanding window for percentile
-                trailing_vols = realized_vol.iloc[:i+1].dropna()
+                trailing_vols = realized_vol.iloc[: i + 1].dropna()
                 if len(trailing_vols) >= lookback * 2:
                     current_vol = realized_vol.iloc[i]
                     percentile = (trailing_vols < current_vol).sum() / len(trailing_vols)
@@ -396,15 +398,15 @@ def _compute_volatility_regime_score(
     percentile_window_years: int = 3,
 ) -> pd.Series:
     """Compute volatility regime score (no lookahead).
-    
+
     High volatility → negative score (reduce risk_on)
     Low volatility → positive score (increase risk_on)
-    
+
     Args:
         prices: Daily price DataFrame with SPY column.
         lookback_days: Window for realized volatility (default 63 days = ~3 months).
         percentile_window_years: Years of history for percentile calculation (default 3).
-    
+
     Returns:
         Monthly series with volatility regime score (z-scored, inverted).
         Higher score = lower vol = favorable for risk-on.
@@ -413,7 +415,9 @@ def _compute_volatility_regime_score(
     returns = spy.pct_change()
 
     # Compute realized volatility (annualized)
-    realized_vol = returns.rolling(window=lookback_days, min_periods=lookback_days).std() * np.sqrt(252)
+    realized_vol = returns.rolling(window=lookback_days, min_periods=lookback_days).std() * np.sqrt(
+        252
+    )
 
     # Convert to monthly (end-of-month volatility)
     vol_monthly = realized_vol.resample("ME").last()
@@ -428,7 +432,7 @@ def _compute_volatility_regime_score(
         else:
             # Use expanding window (up to percentile_window_years * 12 months)
             lookback_months = min(i + 1, min_history * 12)
-            trailing_vols = vol_monthly.iloc[max(0, i + 1 - lookback_months):i + 1].dropna()
+            trailing_vols = vol_monthly.iloc[max(0, i + 1 - lookback_months) : i + 1].dropna()
 
             if len(trailing_vols) >= min_history:
                 current_vol = vol_monthly.iloc[i]
@@ -450,7 +454,7 @@ def _compute_volatility_regime_score(
         if pd.isna(percentile_series.iloc[i]):
             vol_regime_score.iloc[i] = 0.0
         else:
-            trailing = percentile_series.iloc[:i + 1].dropna()
+            trailing = percentile_series.iloc[: i + 1].dropna()
             if len(trailing) >= min_history:
                 mean_pctl = trailing.mean()
                 std_pctl = trailing.std()
@@ -470,11 +474,11 @@ def _compute_trend_filter(
     filter_type: str,
 ) -> pd.Series:
     """Compute absolute trend filter on SPY (no lookahead).
-    
+
     Args:
         prices: Daily price DataFrame with SPY column.
         filter_type: One of '200dma', '12m_return', '10mma', or 'none'.
-    
+
     Returns:
         Daily boolean series (True = trend is positive, False = trend is negative).
     """
@@ -620,10 +624,10 @@ def _compute_hybrid_risk_on(
     breadth_flag_offset: float = 0.0,
 ) -> pd.DataFrame:
     """Compute hybrid risk_on combining macro_score with market signal and volatility regime.
-    
+
     TIMING: Uses expanding window to avoid lookahead bias. At each month-end,
     computes momentum using only data available up to that date.
-    
+
     Args:
         prices: Daily price DataFrame with SPY column.
         regime_df: Regime DataFrame with macro_score and risk_on columns.
@@ -663,7 +667,7 @@ def _compute_hybrid_risk_on(
         momentum_6m_weight: Weight for 6-month momentum z-score blended with primary (24M) z-score.
             combined_signal_z = (1 - momentum_6m_weight) * market_signal_z + momentum_6m_weight * z_6M.
             Used for dual-speed momentum (e.g. 0.3 = 70% 24M, 30% 6M).
-    
+
     Returns:
         Updated regime_df with hybrid risk_on.
     """
@@ -716,7 +720,9 @@ def _compute_hybrid_risk_on(
         momentum_12m_signal = pd.Series(momentum_12m_list, index=spy_monthly.index)
 
         # Blend signals (before z-score normalization)
-        market_signal = (1 - momentum_12m_weight) * primary_signal + momentum_12m_weight * momentum_12m_signal
+        market_signal = (
+            1 - momentum_12m_weight
+        ) * primary_signal + momentum_12m_weight * momentum_12m_signal
     else:
         market_signal = primary_signal
 
@@ -727,9 +733,11 @@ def _compute_hybrid_risk_on(
     market_signal_z = market_signal_aligned.copy()
     min_history = max(market_lookback_months, 12)
     for i in range(len(market_signal_aligned)):
-        trailing = market_signal_aligned.iloc[:i + 1].dropna()
+        trailing = market_signal_aligned.iloc[: i + 1].dropna()
         if len(trailing) >= min_history:
-            market_signal_z.iloc[i] = (market_signal_aligned.iloc[i] - trailing.mean()) / trailing.std()
+            market_signal_z.iloc[i] = (
+                market_signal_aligned.iloc[i] - trailing.mean()
+            ) / trailing.std()
         else:
             market_signal_z.iloc[i] = 0.0
 
@@ -752,7 +760,11 @@ def _compute_hybrid_risk_on(
             trailing = mom6_aligned.iloc[: i + 1].dropna()
             if len(trailing) >= min_6m:
                 std = float(trailing.std())
-                mom6_z.iloc[i] = (float(mom6_aligned.iloc[i]) - float(trailing.mean())) / std if std > 1e-10 else 0.0
+                mom6_z.iloc[i] = (
+                    (float(mom6_aligned.iloc[i]) - float(trailing.mean())) / std
+                    if std > 1e-10
+                    else 0.0
+                )
             else:
                 mom6_z.iloc[i] = 0.0
         mom6_z = mom6_z.fillna(0.0)
@@ -760,7 +772,9 @@ def _compute_hybrid_risk_on(
 
     # Optionally compute volatility regime score
     if use_vol_regime and vol_regime_weight > 0:
-        vol_regime_score = _compute_volatility_regime_score(prices, lookback_days=63, percentile_window_years=3)
+        vol_regime_score = _compute_volatility_regime_score(
+            prices, lookback_days=63, percentile_window_years=3
+        )
         vol_regime_aligned = vol_regime_score.reindex(regime_monthly.index).fillna(0.0)
 
         # Normalize weights so they sum to 1.0
@@ -771,9 +785,9 @@ def _compute_hybrid_risk_on(
 
         # Combine three signals
         combined_score = (
-            norm_macro * macro_score_monthly +
-            norm_market * market_signal_z +
-            norm_vol * vol_regime_aligned
+            norm_macro * macro_score_monthly
+            + norm_market * market_signal_z
+            + norm_vol * vol_regime_aligned
         )
     else:
         # Original two-signal combination
@@ -784,7 +798,15 @@ def _compute_hybrid_risk_on(
     # (macro_weight=0 in the accepted baseline, so combined_score == market_signal_z above)
     if breadth_weight > 0.0 and breadth_prices is not None:
         sector_etfs = [
-            "XLB", "XLE", "XLF", "XLI", "XLK", "XLP", "XLU", "XLV", "XLY",
+            "XLB",
+            "XLE",
+            "XLF",
+            "XLI",
+            "XLK",
+            "XLP",
+            "XLU",
+            "XLV",
+            "XLY",
         ]
         monthly_breadth = _compute_sector_breadth(breadth_prices, sector_etfs)
         breadth_aligned = monthly_breadth.reindex(regime_monthly.index)
@@ -797,9 +819,7 @@ def _compute_hybrid_risk_on(
             if len(trailing) >= min_breadth_history:
                 val = breadth_aligned.iloc[i]
                 std = float(trailing.std())
-                breadth_z_list.append(
-                    float((val - trailing.mean()) / std) if std > 1e-10 else 0.0
-                )
+                breadth_z_list.append(float((val - trailing.mean()) / std) if std > 1e-10 else 0.0)
             else:
                 breadth_z_list.append(0.0)
         breadth_z = pd.Series(breadth_z_list, index=regime_monthly.index)
@@ -875,12 +895,16 @@ def _compute_hybrid_risk_on(
                 v0 = yc_m.iloc[i]
                 v1 = yc_m.iloc[i - 1]
                 v2 = yc_m.iloc[i - 2]
-                flag = 1.0 if (
-                    not (pd.isna(v0) or pd.isna(v1) or pd.isna(v2))
-                    and float(v0) < 0.0
-                    and float(v1) < 0.0
-                    and float(v2) < 0.0
-                ) else 0.0
+                flag = (
+                    1.0
+                    if (
+                        not (pd.isna(v0) or pd.isna(v1) or pd.isna(v2))
+                        and float(v0) < 0.0
+                        and float(v1) < 0.0
+                        and float(v2) < 0.0
+                    )
+                    else 0.0
+                )
                 inv_flag_list.append(flag)
         inv_flag = pd.Series(inv_flag_list, index=regime_monthly.index)
         # Subtract: active inversion flag lowers combined_score → lowers risk_on
@@ -890,7 +914,15 @@ def _compute_hybrid_risk_on(
     # breadth_flag = 1 when sector breadth < 30% for 2+ consecutive months.
     if breadth_flag_offset > 0.0 and breadth_prices is not None:
         sector_etfs_bf = [
-            "XLB", "XLE", "XLF", "XLI", "XLK", "XLP", "XLU", "XLV", "XLY",
+            "XLB",
+            "XLE",
+            "XLF",
+            "XLI",
+            "XLK",
+            "XLP",
+            "XLU",
+            "XLV",
+            "XLY",
         ]
         monthly_breadth_bf = _compute_sector_breadth(breadth_prices, sector_etfs_bf)
         breadth_aligned_bf = monthly_breadth_bf.reindex(regime_monthly.index)
@@ -901,11 +933,11 @@ def _compute_hybrid_risk_on(
             else:
                 b0 = breadth_aligned_bf.iloc[i]
                 b1 = breadth_aligned_bf.iloc[i - 1]
-                flag = 1.0 if (
-                    not (pd.isna(b0) or pd.isna(b1))
-                    and float(b0) < 0.30
-                    and float(b1) < 0.30
-                ) else 0.0
+                flag = (
+                    1.0
+                    if (not (pd.isna(b0) or pd.isna(b1)) and float(b0) < 0.30 and float(b1) < 0.30)
+                    else 0.0
+                )
                 bf_list.append(flag)
         breadth_flag = pd.Series(bf_list, index=regime_monthly.index)
         combined_score = combined_score - breadth_flag_offset * breadth_flag
@@ -915,7 +947,9 @@ def _compute_hybrid_risk_on(
 
     # Forward-fill to daily
     regime_monthly["hybrid_risk_on"] = hybrid_risk_on
-    regime_daily_hybrid = regime_monthly[["hybrid_risk_on"]].reindex(regime_df.index, method="ffill")
+    regime_daily_hybrid = regime_monthly[["hybrid_risk_on"]].reindex(
+        regime_df.index, method="ffill"
+    )
 
     # Replace risk_on with hybrid
     regime_df["risk_on"] = regime_daily_hybrid["hybrid_risk_on"].fillna(regime_df["risk_on"])
@@ -926,7 +960,9 @@ def _compute_hybrid_risk_on(
         trend_filter_aligned = trend_filter.reindex(regime_df.index).fillna(False)
 
         # When trend filter is OFF, cap risk_on
-        regime_df.loc[~trend_filter_aligned, "risk_on"] = regime_df.loc[~trend_filter_aligned, "risk_on"].clip(upper=trend_filter_risk_on_cap)
+        regime_df.loc[~trend_filter_aligned, "risk_on"] = regime_df.loc[
+            ~trend_filter_aligned, "risk_on"
+        ].clip(upper=trend_filter_risk_on_cap)
 
     # Apply volatility scaling if specified
     if vol_scaling_method != "none":
@@ -946,11 +982,11 @@ def _smooth_regime_labels(
     window: int = 3,
 ) -> pd.DataFrame:
     """Apply rolling mode smoothing to regime labels.
-    
+
     Args:
         regime_df: Regime DataFrame with date index and 'regime' column.
         window: Rolling window size in months (e.g., 3 = last 3 months).
-    
+
     Returns:
         Smoothed regime DataFrame (same structure).
     """
@@ -965,7 +1001,7 @@ def _smooth_regime_labels(
     smoothed = []
     for i in range(len(regimes)):
         start_idx = max(0, i - window + 1)
-        window_values = regimes.iloc[start_idx:i + 1]
+        window_values = regimes.iloc[start_idx : i + 1]
         mode_val = window_values.mode()
         if len(mode_val) > 0:
             smoothed.append(mode_val.iloc[0])
@@ -1031,14 +1067,16 @@ def _compute_returns_and_setup(
 
     if use_market_primary:
         regime_df = _compute_market_primary_risk_on(
-            prices, regime_df,
+            prices,
+            regime_df,
             market_lookback_months=market_lookback_months,
             sigmoid_scale=sigmoid_scale,
             macro_stress_cap=market_primary_stress_cap,
         )
     elif use_hybrid_signal:
         regime_df = _compute_hybrid_risk_on(
-            prices, regime_df,
+            prices,
+            regime_df,
             macro_weight=hybrid_macro_weight,
             market_lookback_months=market_lookback_months,
             use_momentum=use_momentum,
@@ -1062,8 +1100,8 @@ def _compute_returns_and_setup(
         # Apply trend filter in non-hybrid mode (was previously unreachable)
         trend_filter = _compute_trend_filter(prices, trend_filter_type)
         trend_aligned = trend_filter.reindex(regime_df.index).fillna(False)
-        regime_df.loc[~trend_aligned, "risk_on"] = (
-            regime_df.loc[~trend_aligned, "risk_on"].clip(upper=trend_filter_risk_on_cap)
+        regime_df.loc[~trend_aligned, "risk_on"] = regime_df.loc[~trend_aligned, "risk_on"].clip(
+            upper=trend_filter_risk_on_cap
         )
 
     regime_df = regime_df.reindex(returns.index).ffill()
@@ -1080,37 +1118,71 @@ def _compute_returns_and_setup(
         w_risk_on = _avg_alloc(allocations, RISK_ON_REGIMES, assets_to_use)
         w_risk_off = _avg_alloc(allocations, RISK_OFF_REGIMES, assets_to_use)
     elif portfolio_construction_method == "equal_weight":
-        w_risk_on = _equal_weight_alloc(assets_to_use, is_risk_on=True,
-                                         risk_on_sleeve=risk_on_sleeve, risk_off_sleeve=risk_off_sleeve)
-        w_risk_off = _equal_weight_alloc(assets_to_use, is_risk_on=False,
-                                          risk_on_sleeve=risk_on_sleeve, risk_off_sleeve=risk_off_sleeve)
+        w_risk_on = _equal_weight_alloc(
+            assets_to_use,
+            is_risk_on=True,
+            risk_on_sleeve=risk_on_sleeve,
+            risk_off_sleeve=risk_off_sleeve,
+        )
+        w_risk_off = _equal_weight_alloc(
+            assets_to_use,
+            is_risk_on=False,
+            risk_on_sleeve=risk_on_sleeve,
+            risk_off_sleeve=risk_off_sleeve,
+        )
     elif portfolio_construction_method == "asset_momentum_positive":
         # Asset-specific momentum filter (positive only) - dynamic
-        momentum_ts = _compute_asset_momentum_timeseries(prices, assets_to_use, market_lookback_months)
+        momentum_ts = _compute_asset_momentum_timeseries(
+            prices, assets_to_use, market_lookback_months
+        )
         w_risk_on_dynamic = _compute_asset_momentum_allocations_timeseries(
             momentum_ts, assets_to_use, filter_method="positive", risk_on_sleeve=risk_on_sleeve
         )
         w_risk_on = None
-        w_risk_off = _equal_weight_alloc(assets_to_use, is_risk_on=False,
-                                          risk_on_sleeve=risk_on_sleeve, risk_off_sleeve=risk_off_sleeve)
+        w_risk_off = _equal_weight_alloc(
+            assets_to_use,
+            is_risk_on=False,
+            risk_on_sleeve=risk_on_sleeve,
+            risk_off_sleeve=risk_off_sleeve,
+        )
     elif portfolio_construction_method == "asset_momentum_top3":
         # Asset-specific momentum (top 3) - dynamic
-        momentum_ts = _compute_asset_momentum_timeseries(prices, assets_to_use, market_lookback_months)
+        momentum_ts = _compute_asset_momentum_timeseries(
+            prices, assets_to_use, market_lookback_months
+        )
         w_risk_on_dynamic = _compute_asset_momentum_allocations_timeseries(
-            momentum_ts, assets_to_use, filter_method="top_n", top_n=3, risk_on_sleeve=risk_on_sleeve
+            momentum_ts,
+            assets_to_use,
+            filter_method="top_n",
+            top_n=3,
+            risk_on_sleeve=risk_on_sleeve,
         )
         w_risk_on = None
-        w_risk_off = _equal_weight_alloc(assets_to_use, is_risk_on=False,
-                                          risk_on_sleeve=risk_on_sleeve, risk_off_sleeve=risk_off_sleeve)
+        w_risk_off = _equal_weight_alloc(
+            assets_to_use,
+            is_risk_on=False,
+            risk_on_sleeve=risk_on_sleeve,
+            risk_off_sleeve=risk_off_sleeve,
+        )
     elif portfolio_construction_method == "asset_momentum_top5":
         # Asset-specific momentum (top 5) - dynamic
-        momentum_ts = _compute_asset_momentum_timeseries(prices, assets_to_use, market_lookback_months)
+        momentum_ts = _compute_asset_momentum_timeseries(
+            prices, assets_to_use, market_lookback_months
+        )
         w_risk_on_dynamic = _compute_asset_momentum_allocations_timeseries(
-            momentum_ts, assets_to_use, filter_method="top_n", top_n=5, risk_on_sleeve=risk_on_sleeve
+            momentum_ts,
+            assets_to_use,
+            filter_method="top_n",
+            top_n=5,
+            risk_on_sleeve=risk_on_sleeve,
         )
         w_risk_on = None
-        w_risk_off = _equal_weight_alloc(assets_to_use, is_risk_on=False,
-                                          risk_on_sleeve=risk_on_sleeve, risk_off_sleeve=risk_off_sleeve)
+        w_risk_off = _equal_weight_alloc(
+            assets_to_use,
+            is_risk_on=False,
+            risk_on_sleeve=risk_on_sleeve,
+            risk_off_sleeve=risk_off_sleeve,
+        )
     elif portfolio_construction_method == "xs_momentum_top4":
         # Cross-sectional momentum: rank risk-on sleeve by 12M momentum, select top 4.
         # The 12M lookback is fixed and independent of market_lookback_months (24M market signal).
@@ -1119,8 +1191,12 @@ def _compute_returns_and_setup(
             xs_mom_ts, assets_to_use, filter_method="top_n", top_n=4, risk_on_sleeve=risk_on_sleeve
         )
         w_risk_on = None
-        w_risk_off = _equal_weight_alloc(assets_to_use, is_risk_on=False,
-                                          risk_on_sleeve=risk_on_sleeve, risk_off_sleeve=risk_off_sleeve)
+        w_risk_off = _equal_weight_alloc(
+            assets_to_use,
+            is_risk_on=False,
+            risk_on_sleeve=risk_on_sleeve,
+            risk_off_sleeve=risk_off_sleeve,
+        )
     elif portfolio_construction_method == "risk_parity":
         w_risk_on = _risk_parity_alloc(prices, assets_to_use, lookback_days=63)
         w_risk_off = _risk_parity_alloc(prices, assets_to_use, lookback_days=63)
@@ -1159,9 +1235,7 @@ def _run_backtest_loop(
     """Original per-date loop. Kept for parity validation."""
     portfolio_returns_list: list[float] = []
     prev_month: pd.Period | None = None
-    current_weights: dict[str, float] = {
-        a: 1.0 / (len(TICKERS) + 1) for a in TICKERS
-    }
+    current_weights: dict[str, float] = {a: 1.0 / (len(TICKERS) + 1) for a in TICKERS}
     current_weights["cash"] = 1.0 / (len(TICKERS) + 1)
     prev_weights_for_cost = dict(current_weights)
 
@@ -1181,7 +1255,11 @@ def _run_backtest_loop(
             # Check for dynamic risk-on allocations
             has_dynamic_risk_on = any(f"w_risk_on_{a}" in regime_df.columns for a in ASSETS)
 
-            if use_stagflation_override and regime_stripped == "Stagflation" and "Stagflation" in allocations:
+            if (
+                use_stagflation_override
+                and regime_stripped == "Stagflation"
+                and "Stagflation" in allocations
+            ):
                 current_weights = {str(k): float(v) for k, v in allocations["Stagflation"].items()}
             elif "risk_on" in regime_df.columns and not pd.isna(regime_df.loc[date, "risk_on"]):
                 alpha = float(regime_df.loc[date, "risk_on"])
@@ -1190,16 +1268,16 @@ def _run_backtest_loop(
 
                 # Use dynamic risk-on weights if available
                 if has_dynamic_risk_on:
-                    w_risk_on_monthly = {a: float(regime_df.loc[date, f"w_risk_on_{a}"]) for a in ASSETS}
+                    w_risk_on_monthly = {
+                        a: float(regime_df.loc[date, f"w_risk_on_{a}"]) for a in ASSETS
+                    }
                     current_weights = _blend_alloc(w_risk_off, w_risk_on_monthly, alpha, ASSETS)
                 else:
                     current_weights = _blend_alloc(w_risk_off, w_risk_on, alpha, ASSETS)
             else:
                 rk = REGIME_ALIASES.get(regime_stripped, regime_stripped)
                 if rk in allocations:
-                    current_weights = {
-                        str(k): float(v) for k, v in allocations[rk].items()
-                    }
+                    current_weights = {str(k): float(v) for k, v in allocations[rk].items()}
                 else:
                     logger.warning("Unknown regime '%s' on %s", regime, date.date())
 
@@ -1210,10 +1288,7 @@ def _run_backtest_loop(
             prev_month = month
             rebalanced = True
 
-        daily_ret = sum(
-            returns.loc[date, a] * float(current_weights.get(a, 0.0))
-            for a in ASSETS
-        )
+        daily_ret = sum(returns.loc[date, a] * float(current_weights.get(a, 0.0)) for a in ASSETS)
         if rebalanced:
             turnover = sum(
                 abs(float(current_weights.get(a, 0.0)) - float(prev_weights_for_cost.get(a, 0.0)))
@@ -1285,7 +1360,12 @@ def _run_backtest_vectorized(
     vol_target_annual: float = 0.0,
     return_turnover_attribution: bool = False,
     use_post_blend_inv_vol: bool = True,
-) -> pd.Series | tuple[pd.Series, pd.DataFrame] | tuple[pd.Series, pd.DataFrame, pd.Series] | tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
+) -> (
+    pd.Series
+    | tuple[pd.Series, pd.DataFrame]
+    | tuple[pd.Series, pd.DataFrame, pd.Series]
+    | tuple[pd.Series, pd.DataFrame, pd.DataFrame]
+):
     """Vectorized backtest: precompute vols, build weight matrix, vectorized returns."""
     rolling_std = returns[TICKERS].rolling(VOL_LOOKBACK, min_periods=1).std()
 
@@ -1300,7 +1380,9 @@ def _run_backtest_vectorized(
     weights = np.zeros((len(dates), len(weight_cols)))
     asset_idx = {a: i for i, a in enumerate(weight_cols)}
     cash_idx = weight_cols.index("cash") if "cash" in weight_cols else None
-    scale_at_rebalance: list[tuple[pd.Timestamp, float]] = []  # (date, scale) when vol_target_annual > 0
+    scale_at_rebalance: list[
+        tuple[pd.Timestamp, float]
+    ] = []  # (date, scale) when vol_target_annual > 0
 
     eq_w = 1.0 / (len(TICKERS) + 1)
     current = dict.fromkeys(TICKERS, eq_w)
@@ -1327,7 +1409,11 @@ def _run_backtest_vectorized(
             prev_start = prev_weights.copy() if return_turnover_attribution else None
 
             regime_stripped = str(regime).strip()
-            if use_stagflation_override and regime_stripped == "Stagflation" and "Stagflation" in allocations:
+            if (
+                use_stagflation_override
+                and regime_stripped == "Stagflation"
+                and "Stagflation" in allocations
+            ):
                 current = {str(k): float(v) for k, v in allocations["Stagflation"].items()}
             elif "risk_on" in regime_df.columns and not pd.isna(regime_df.loc[date, "risk_on"]):
                 alpha = float(regime_df.loc[date, "risk_on"])
@@ -1336,7 +1422,9 @@ def _run_backtest_vectorized(
 
                 # Use dynamic risk-on weights if available
                 if has_dynamic_risk_on:
-                    w_risk_on_monthly = {a: float(regime_df.loc[date, f"w_risk_on_{a}"]) for a in ASSETS}
+                    w_risk_on_monthly = {
+                        a: float(regime_df.loc[date, f"w_risk_on_{a}"]) for a in ASSETS
+                    }
                     current = _blend_alloc(w_risk_off, w_risk_on_monthly, alpha, ASSETS)
                 else:
                     current = _blend_alloc(w_risk_off, w_risk_on, alpha, ASSETS)
@@ -1348,7 +1436,10 @@ def _run_backtest_vectorized(
                     current = {a: 1.0 / len(ASSETS) for a in ASSETS}
 
             std_row = rolling_std.loc[date]
-            std_dict = {a: float(std_row[a]) if a in std_row.index and pd.notna(std_row[a]) else None for a in TICKERS}
+            std_dict = {
+                a: float(std_row[a]) if a in std_row.index and pd.notna(std_row[a]) else None
+                for a in TICKERS
+            }
             if use_post_blend_inv_vol:
                 current = vol_scaled_weights_from_std(current, std_dict, list(TICKERS))
             if rf_sleeve_cap > 0.0 and rf_sleeve_assets:
@@ -1364,7 +1455,13 @@ def _run_backtest_vectorized(
                 prev_weights = new_w
 
             # Turnover attribution (baseline path: risk_on blend + post-blend inv-vol + tau)
-            if return_turnover_attribution and prev_start is not None and not has_dynamic_risk_on and "risk_on" in regime_df.columns and not pd.isna(regime_df.loc[date, "risk_on"]):
+            if (
+                return_turnover_attribution
+                and prev_start is not None
+                and not has_dynamic_risk_on
+                and "risk_on" in regime_df.columns
+                and not pd.isna(regime_df.loc[date, "risk_on"])
+            ):
                 alpha = float(regime_df.loc[date, "risk_on"])
                 to_target_pre_tau = float(np.abs(new_w - prev_start).sum())
                 to_removed_by_tau = float(np.abs(new_w - prev_weights).sum())
@@ -1386,17 +1483,19 @@ def _run_backtest_vectorized(
                 to_sleeve_internal = 0.0  # equal-weight sleeves: no sleeve-internal change
                 valid_vols = [v for v in std_dict.values() if v is not None and not np.isnan(v)]
                 realized_vol_avg = float(np.mean(valid_vols)) if valid_vols else np.nan
-                attribution_records.append({
-                    "date": date,
-                    "risk_on": alpha,
-                    "to_signal": to_signal,
-                    "to_sleeve_internal": to_sleeve_internal,
-                    "to_invvol": to_invvol,
-                    "to_removed_by_tau": to_removed_by_tau,
-                    "to_executed": to_executed,
-                    "to_target_pre_tau": to_target_pre_tau,
-                    "realized_vol_avg": realized_vol_avg,
-                })
+                attribution_records.append(
+                    {
+                        "date": date,
+                        "risk_on": alpha,
+                        "to_signal": to_signal,
+                        "to_sleeve_internal": to_sleeve_internal,
+                        "to_invvol": to_invvol,
+                        "to_removed_by_tau": to_removed_by_tau,
+                        "to_executed": to_executed,
+                        "to_target_pre_tau": to_target_pre_tau,
+                        "realized_vol_avg": realized_vol_avg,
+                    }
+                )
                 prev_ro = alpha
                 prev_std_dict = dict(std_dict)
 
@@ -1433,7 +1532,9 @@ def _run_backtest_vectorized(
         scale_series = None
         if vol_target_annual > 0 and scale_at_rebalance:
             scale_dates, scale_vals = zip(*scale_at_rebalance)
-            scale_series = pd.Series(scale_vals, index=pd.DatetimeIndex(scale_dates), name="vol_scale")
+            scale_series = pd.Series(
+                scale_vals, index=pd.DatetimeIndex(scale_dates), name="vol_scale"
+            )
         if return_turnover_attribution and attribution_records:
             att_df = pd.DataFrame(attribution_records).set_index("date")
             return pd.Series(portfolio_ret, index=dates), weights_df, scale_series, att_df
@@ -1485,7 +1586,12 @@ def run_backtest_with_allocations(
     use_post_blend_inv_vol: bool = True,
     use_market_primary: bool = False,
     market_primary_stress_cap: float = 0.40,
-) -> pd.Series | tuple[pd.Series, pd.DataFrame] | tuple[pd.Series, pd.DataFrame, pd.Series] | tuple[pd.Series, pd.DataFrame, pd.Series | None, pd.DataFrame]:
+) -> (
+    pd.Series
+    | tuple[pd.Series, pd.DataFrame]
+    | tuple[pd.Series, pd.DataFrame, pd.Series]
+    | tuple[pd.Series, pd.DataFrame, pd.Series | None, pd.DataFrame]
+):
     """Run backtest with given data. No DB. Returns portfolio returns (and optionally weights, scale series, attribution).
 
     Used by walk-forward evaluation to test on out-of-sample periods.
@@ -1507,12 +1613,27 @@ def run_backtest_with_allocations(
         if "cash" not in alloc:
             alloc["cash"] = 0.0
     returns, regime_df, w_risk_on, w_risk_off, _ = _compute_returns_and_setup(
-        prices, regime_df, allocations, use_regime_smoothing, regime_smoothing_window,
-        use_hybrid_signal, hybrid_macro_weight, market_lookback_months, use_momentum,
-        trend_filter_type, trend_filter_risk_on_cap, vol_scaling_method,
-        portfolio_construction_method, momentum_12m_weight,
-        tickers, assets, risk_on_sleeve, risk_off_sleeve,
-        use_vol_regime, vol_regime_weight, sigmoid_scale,
+        prices,
+        regime_df,
+        allocations,
+        use_regime_smoothing,
+        regime_smoothing_window,
+        use_hybrid_signal,
+        hybrid_macro_weight,
+        market_lookback_months,
+        use_momentum,
+        trend_filter_type,
+        trend_filter_risk_on_cap,
+        vol_scaling_method,
+        portfolio_construction_method,
+        momentum_12m_weight,
+        tickers,
+        assets,
+        risk_on_sleeve,
+        risk_off_sleeve,
+        use_vol_regime,
+        vol_regime_weight,
+        sigmoid_scale,
         momentum_6m_weight=momentum_6m_weight,
         breadth_weight=breadth_weight,
         breadth_prices=breadth_prices,
@@ -1526,7 +1647,11 @@ def run_backtest_with_allocations(
     )
     rf_assets_frozen = frozenset(risk_off_sleeve) if risk_off_sleeve else None
     result = _run_backtest_vectorized(
-        returns, regime_df, allocations, w_risk_on, w_risk_off,
+        returns,
+        regime_df,
+        allocations,
+        w_risk_on,
+        w_risk_off,
         returns[TICKERS].mean(axis=1),
         return_weights=return_weights,
         use_stagflation_override=use_stagflation_override,
@@ -1588,7 +1713,12 @@ def run_backtest(pipeline_data: "PipelineData | None" = None) -> dict[str, Any]:
     )
 
     portfolio_returns = _run_backtest_vectorized(
-        returns, regime_df, allocations, w_risk_on, w_risk_off, equal_weight_returns,
+        returns,
+        regime_df,
+        allocations,
+        w_risk_on,
+        w_risk_off,
+        equal_weight_returns,
         use_stagflation_override=True,
     )
 

@@ -119,9 +119,7 @@ def align_paired_monthly_returns(
     bench_m.index = pd.to_datetime(bench_m.index).to_period("M")
     common = strat_m.index.intersection(bench_m.index)
     if len(common) < 2:
-        raise ValueError(
-            f"Need >=2 overlapping monthly observations; got {len(common)}."
-        )
+        raise ValueError(f"Need >=2 overlapping monthly observations; got {len(common)}.")
     common = common.sort_values()
     return strat_m.loc[common], bench_m.loc[common]
 
@@ -181,9 +179,9 @@ def paired_block_bootstrap_delta_sharpe(
     boot_deltas = np.empty(n_iterations, dtype=float)
     for i in range(n_iterations):
         boot_s, boot_b = _circular_block_resample_paired(strat, bench, n, block_size, rng)
-        boot_deltas[i] = monthly_sharpe(
-            pd.Series(boot_s), rf_monthly=rf_monthly
-        ) - monthly_sharpe(pd.Series(boot_b), rf_monthly=rf_monthly)
+        boot_deltas[i] = monthly_sharpe(pd.Series(boot_s), rf_monthly=rf_monthly) - monthly_sharpe(
+            pd.Series(boot_b), rf_monthly=rf_monthly
+        )
 
     # Center bootstrap distribution before the H0:delta=0 test. Under H_alt the
     # bootstrap is centered at obs_delta, so an uncentered |boot| >= |obs| test

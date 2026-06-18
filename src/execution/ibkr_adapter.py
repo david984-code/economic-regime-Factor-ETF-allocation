@@ -13,13 +13,16 @@ from src.config import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
+
 # Optional: load yaml only when needed to avoid hard dependency if not used
 def _load_paper_config() -> dict[str, Any]:
     """Load paper_trading.yaml with env overrides. No credentials in file."""
     try:
         import yaml
     except ImportError:
-        raise ImportError("PyYAML is required for execution config. Install with: pip install pyyaml") from None
+        raise ImportError(
+            "PyYAML is required for execution config. Install with: pip install pyyaml"
+        ) from None
     config_path = PROJECT_ROOT / "config" / "paper_trading.yaml"
     if not config_path.exists():
         raise FileNotFoundError(f"Paper trading config not found: {config_path}")
@@ -62,7 +65,9 @@ class IBKRPaperAdapter:
         port = self._config["port"]
         client_id = self._config["client_id"]
         account = self._config["account"]
-        logger.info("Connecting to IB Gateway paper host=%s port=%s client_id=%s", host, port, client_id)
+        logger.info(
+            "Connecting to IB Gateway paper host=%s port=%s client_id=%s", host, port, client_id
+        )
         self._ib = IB()
         try:
             self._ib.connect(
@@ -102,12 +107,14 @@ class IBKRPaperAdapter:
         rows = self._ib.accountSummary(account=account)
         out = []
         for r in rows:
-            out.append({
-                "tag": getattr(r, "tag", ""),
-                "value": getattr(r, "value", ""),
-                "currency": getattr(r, "currency", ""),
-                "account": getattr(r, "account", ""),
-            })
+            out.append(
+                {
+                    "tag": getattr(r, "tag", ""),
+                    "value": getattr(r, "value", ""),
+                    "currency": getattr(r, "currency", ""),
+                    "account": getattr(r, "account", ""),
+                }
+            )
         logger.debug("Account summary rows: %d", len(out))
         return out
 
@@ -122,12 +129,14 @@ class IBKRPaperAdapter:
             symbol = ""
             if contract is not None:
                 symbol = getattr(contract, "symbol", "") or ""
-            out.append({
-                "account": getattr(p, "account", ""),
-                "symbol": symbol,
-                "position": getattr(p, "position", 0),
-                "avgCost": getattr(p, "avgCost", 0.0),
-            })
+            out.append(
+                {
+                    "account": getattr(p, "account", ""),
+                    "symbol": symbol,
+                    "position": getattr(p, "position", 0),
+                    "avgCost": getattr(p, "avgCost", 0.0),
+                }
+            )
         logger.debug("Positions count: %d", len(out))
         return out
 
@@ -155,14 +164,16 @@ class IBKRPaperAdapter:
                 if market_price <= 0 and position != 0 and avg_cost != 0:
                     market_price = avg_cost
                     market_value = position * avg_cost
-                items.append({
-                    "account": account,
-                    "symbol": symbol,
-                    "position": position,
-                    "avgCost": avg_cost,
-                    "marketValue": market_value,
-                    "marketPrice": market_price,
-                })
+                items.append(
+                    {
+                        "account": account,
+                        "symbol": symbol,
+                        "position": position,
+                        "avgCost": avg_cost,
+                        "marketValue": market_value,
+                        "marketPrice": market_price,
+                    }
+                )
         except Exception as e:
             logger.warning("get_portfolio failed, falling back to positions(): %s", e)
         if not items:
@@ -173,15 +184,19 @@ class IBKRPaperAdapter:
                     continue
                 pos = float(p.get("position", 0))
                 avg = float(p.get("avgCost", 0.0))
-                items.append({
-                    "account": p.get("account", ""),
-                    "symbol": symbol,
-                    "position": pos,
-                    "avgCost": avg,
-                    "marketValue": pos * avg if (pos and avg) else 0.0,
-                    "marketPrice": avg if avg else 0.0,
-                })
-            logger.info("Using positions fallback (no portfolio market data); current weights will use cost basis")
+                items.append(
+                    {
+                        "account": p.get("account", ""),
+                        "symbol": symbol,
+                        "position": pos,
+                        "avgCost": avg,
+                        "marketValue": pos * avg if (pos and avg) else 0.0,
+                        "marketPrice": avg if avg else 0.0,
+                    }
+                )
+            logger.info(
+                "Using positions fallback (no portfolio market data); current weights will use cost basis"
+            )
         else:
             logger.debug("Portfolio items: %d with market value/price", len(items))
         return items

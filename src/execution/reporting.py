@@ -41,4 +41,3 @@ def write_run_summary(report_dir: Path, summary: RunSummary) -> Path:
         json.dump(summary.__dict__, f, indent=2)
     logger.info("Wrote run summary: %s", path)
     return path
-

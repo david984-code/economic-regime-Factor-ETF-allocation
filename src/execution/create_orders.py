@@ -208,7 +208,9 @@ def _resolve_price_per_symbol(
             logger.debug("Price for %s: broker market %.2f", p.symbol, p.market_price)
         elif p.avg_cost and p.avg_cost > 0:
             price_map[p.symbol] = p.avg_cost
-            logger.debug("Price for %s: broker avgCost %.2f (no market price)", p.symbol, p.avg_cost)
+            logger.debug(
+                "Price for %s: broker avgCost %.2f (no market price)", p.symbol, p.avg_cost
+            )
     # 2) Supplied prices file for symbols not from broker
     for sym, px in (supplied_prices or {}).items():
         if sym and px is not None and px > 0 and sym not in price_map:
@@ -242,7 +244,10 @@ def create_order_preview(
         other = sum(target.get(s, 0.0) for s in target)
         target["cash"] = max(0.0, 1.0 - other)
 
-    weight_drift = {s: target.get(s, 0.0) - current_weights.get(s, 0.0) for s in set(target) | set(current_weights)}
+    weight_drift = {
+        s: target.get(s, 0.0) - current_weights.get(s, 0.0)
+        for s in set(target) | set(current_weights)
+    }
     tau_filtered_delta = apply_tau_filter(target, current_weights, tau)
     turnover_one_way = compute_turnover_one_way(tau_filtered_delta)
 
@@ -253,8 +258,7 @@ def create_order_preview(
 
     # Tradable symbols = all in tau_filtered_delta except cash (cash is never an order)
     tradable_with_delta = [
-        s for s, d in tau_filtered_delta.items()
-        if s != "cash" and abs(d) >= 1e-9
+        s for s, d in tau_filtered_delta.items() if s != "cash" and abs(d) >= 1e-9
     ]
     for symbol in tradable_with_delta:
         delta = tau_filtered_delta[symbol]

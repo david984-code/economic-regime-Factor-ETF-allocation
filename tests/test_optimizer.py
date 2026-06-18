@@ -6,6 +6,7 @@ Covers the two error classes most likely to silently inflate backtest edge:
 
 Each test uses synthetic data with a hand-computable expected answer.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -20,6 +21,7 @@ from src.config import OPTIMIZER_CASH_PREFERENCE, REGIME_CASH, RF_MONTHLY
 # _negative_sortino math
 # ---------------------------------------------------------------------------
 
+
 class TestNegativeSortino:
     """The optimizer minimizes _negative_sortino, so sign / math errors here
     flip the entire allocation logic. These are the canary tests."""
@@ -33,8 +35,7 @@ class TestNegativeSortino:
         # With no downside, downside_vol is clamped to 1e-8; Sortino is enormous.
         # Function returns -sortino + cash_pref * cash_weight = very negative.
         assert result < -1e5, (
-            f"All-positive returns should give very negative output (huge reward); "
-            f"got {result}"
+            f"All-positive returns should give very negative output (huge reward); got {result}"
         )
 
     def test_all_negative_returns_gives_large_penalty(self) -> None:
@@ -43,9 +44,7 @@ class TestNegativeSortino:
         weights = np.array([0.5, 0.5, 0.0])
         result = _negative_sortino(weights, returns, risk_free=0.0)
         # mean = -0.02 (below rf=0); downside_var > 0; Sortino is negative; -Sortino positive.
-        assert result > 0, (
-            f"All-negative returns should give positive penalty; got {result}"
-        )
+        assert result > 0, f"All-negative returns should give positive penalty; got {result}"
 
     def test_known_sortino_value(self) -> None:
         """Hand-computed Sortino: alternating +2% and -1%, rf=0.
@@ -61,9 +60,7 @@ class TestNegativeSortino:
         weights = np.array([1.0, 0.0])  # 100% risky, 0 cash
         result = _negative_sortino(weights, returns, risk_free=0.0)
         expected = -0.7071  # ±0.01 tolerance for numerical precision
-        assert abs(result - expected) < 0.01, (
-            f"Expected ~{expected} (Sortino=0.7071); got {result}"
-        )
+        assert abs(result - expected) < 0.01, f"Expected ~{expected} (Sortino=0.7071); got {result}"
 
     def test_cash_preference_penalty(self) -> None:
         """Cash weight adds OPTIMIZER_CASH_PREFERENCE * cash_weight to the objective.
@@ -83,6 +80,7 @@ class TestNegativeSortino:
 # ---------------------------------------------------------------------------
 # optimize_allocations_from_data: constraint compliance
 # ---------------------------------------------------------------------------
+
 
 def _make_synth_data(n_months: int = 80) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Synthetic 3-asset universe across Recovery and Contraction regimes.
@@ -123,9 +121,7 @@ class TestOptimizerConstraints:
         allocs = optimize_allocations_from_data(returns, regime_df)
         for regime, weights in allocs.items():
             total = sum(weights.values())
-            assert abs(total - 1.0) < 1e-4, (
-                f"Regime {regime!r}: weights sum to {total}, not 1.0"
-            )
+            assert abs(total - 1.0) < 1e-4, f"Regime {regime!r}: weights sum to {total}, not 1.0"
 
     def test_cash_floor_respected_per_regime(self) -> None:
         returns, regime_df = _make_synth_data()
@@ -151,9 +147,7 @@ class TestOptimizerConstraints:
         allocs = optimize_allocations_from_data(returns, regime_df)
         for regime, weights in allocs.items():
             for asset, w in weights.items():
-                assert w >= -1e-6, (
-                    f"Regime {regime!r}: asset {asset!r} has negative weight {w}"
-                )
+                assert w >= -1e-6, f"Regime {regime!r}: asset {asset!r} has negative weight {w}"
 
     def test_optimizer_picks_winning_asset_in_recovery(self) -> None:
         """Asset A is strongest in Recovery by construction; optimizer should weight it >= B and C."""

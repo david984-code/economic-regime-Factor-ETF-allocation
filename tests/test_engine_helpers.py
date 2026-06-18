@@ -8,6 +8,7 @@ Each test constructs data with a hand-computable expected answer and asserts
 the helper matches. A test that just "exercises code" without a known answer
 would pass even after a regression -- by design these don't.
 """
+
 from __future__ import annotations
 
 import pandas as pd
@@ -19,6 +20,7 @@ from src.backtest.engine import _blend_alloc, _equal_weight_alloc, _smooth_regim
 # ---------------------------------------------------------------------------
 # _blend_alloc: weight blending between risk-on and risk-off allocations
 # ---------------------------------------------------------------------------
+
 
 class TestBlendAlloc:
     """The single most-called function in the live path. A sign-flip or
@@ -79,6 +81,7 @@ class TestBlendAlloc:
 # _equal_weight_alloc: the default fallback
 # ---------------------------------------------------------------------------
 
+
 class TestEqualWeightAlloc:
     def test_risk_on_sleeve_only(self) -> None:
         """Custom risk-on sleeve of 4 assets -> each gets 1/4=0.25."""
@@ -109,6 +112,7 @@ class TestEqualWeightAlloc:
 # _smooth_regime_labels: the rolling-mode smoother
 # ---------------------------------------------------------------------------
 
+
 class TestSmoothRegimeLabels:
     """A regime smoothing off-by-one or window-direction bug would either
     leak future regime info backward (lookahead) or fail to smooth single-month
@@ -133,8 +137,16 @@ class TestSmoothRegimeLabels:
         """A real 3+ month regime change should NOT be smoothed away."""
         idx = pd.date_range("2024-01-31", periods=6, freq="ME")
         df = pd.DataFrame(
-            {"regime": ["Recovery", "Recovery", "Stagflation", "Stagflation",
-                        "Stagflation", "Stagflation"]},
+            {
+                "regime": [
+                    "Recovery",
+                    "Recovery",
+                    "Stagflation",
+                    "Stagflation",
+                    "Stagflation",
+                    "Stagflation",
+                ]
+            },
             index=idx,
         )
         out = _smooth_regime_labels(df, window=3)

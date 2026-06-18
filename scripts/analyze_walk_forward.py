@@ -53,7 +53,9 @@ def main(loader=None) -> None:
     print("1. OVERALL METRICS (averaged across segments)")
     print("-" * 70)
     rows = []
-    for name, prefix in [("Strategy", STRATEGY_PREFIX)] + [(b, BENCH_PREFIXES[b]) for b in BENCHMARKS]:
+    for name, prefix in [("Strategy", STRATEGY_PREFIX)] + [
+        (b, BENCH_PREFIXES[b]) for b in BENCHMARKS
+    ]:
         row = {"": name}
         for m in METRICS:
             col = f"{prefix}{m}"
@@ -83,24 +85,66 @@ def main(loader=None) -> None:
                 wins += (df[sc] > df[bc]).sum()
         beat_rates[b] = wins / (n * 2) if n > 0 else 0  # avg across CAGR and Sharpe
     for b in BENCHMARKS:
-        cagr_wins = (df[f"{STRATEGY_PREFIX}CAGR"] > df[f"{b}_CAGR"]).sum() if f"{b}_CAGR" in df.columns else 0
-        sharpe_wins = (df[f"{STRATEGY_PREFIX}Sharpe"] > df[f"{b}_Sharpe"]).sum() if f"{b}_Sharpe" in df.columns else 0
-        print(f"  vs {b}: CAGR wins {cagr_wins}/{n} ({100*cagr_wins/n:.1f}%), Sharpe wins {sharpe_wins}/{n} ({100*sharpe_wins/n:.1f}%)")
+        cagr_wins = (
+            (df[f"{STRATEGY_PREFIX}CAGR"] > df[f"{b}_CAGR"]).sum()
+            if f"{b}_CAGR" in df.columns
+            else 0
+        )
+        sharpe_wins = (
+            (df[f"{STRATEGY_PREFIX}Sharpe"] > df[f"{b}_Sharpe"]).sum()
+            if f"{b}_Sharpe" in df.columns
+            else 0
+        )
+        print(
+            f"  vs {b}: CAGR wins {cagr_wins}/{n} ({100 * cagr_wins / n:.1f}%), Sharpe wins {sharpe_wins}/{n} ({100 * sharpe_wins / n:.1f}%)"
+        )
 
     # Best / worst segments
     print("\n" + "-" * 70)
     print("3. BEST SEGMENTS (by Strategy Sharpe)")
     print("-" * 70)
     df_s = df.sort_values(f"{STRATEGY_PREFIX}Sharpe", ascending=False)
-    best = df_s.head(5)[["test_start", "test_end", f"{STRATEGY_PREFIX}Sharpe", f"{STRATEGY_PREFIX}CAGR", "SPY_Sharpe", "SPY_CAGR"]]
-    best.columns = ["test_start", "test_end", "Strategy_Sharpe", "Strategy_CAGR", "SPY_Sharpe", "SPY_CAGR"]
+    best = df_s.head(5)[
+        [
+            "test_start",
+            "test_end",
+            f"{STRATEGY_PREFIX}Sharpe",
+            f"{STRATEGY_PREFIX}CAGR",
+            "SPY_Sharpe",
+            "SPY_CAGR",
+        ]
+    ]
+    best.columns = [
+        "test_start",
+        "test_end",
+        "Strategy_Sharpe",
+        "Strategy_CAGR",
+        "SPY_Sharpe",
+        "SPY_CAGR",
+    ]
     print(best.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
 
     print("\n" + "-" * 70)
     print("4. WORST SEGMENTS (by Strategy Sharpe)")
     print("-" * 70)
-    worst = df_s.tail(5)[["test_start", "test_end", f"{STRATEGY_PREFIX}Sharpe", f"{STRATEGY_PREFIX}CAGR", "SPY_Sharpe", "SPY_CAGR"]]
-    worst.columns = ["test_start", "test_end", "Strategy_Sharpe", "Strategy_CAGR", "SPY_Sharpe", "SPY_CAGR"]
+    worst = df_s.tail(5)[
+        [
+            "test_start",
+            "test_end",
+            f"{STRATEGY_PREFIX}Sharpe",
+            f"{STRATEGY_PREFIX}CAGR",
+            "SPY_Sharpe",
+            "SPY_CAGR",
+        ]
+    ]
+    worst.columns = [
+        "test_start",
+        "test_end",
+        "Strategy_Sharpe",
+        "Strategy_CAGR",
+        "SPY_Sharpe",
+        "SPY_CAGR",
+    ]
     print(worst.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
 
     # Performance concentration
@@ -109,8 +153,12 @@ def main(loader=None) -> None:
     print("-" * 70)
     top5_sharpe = df_s.head(int(n * 0.2))
     bot5_sharpe = df_s.tail(int(n * 0.2))
-    print(f"  Top 20% of segments (by Sharpe): avg Strategy Sharpe {top5_sharpe[f'{STRATEGY_PREFIX}Sharpe'].mean():.3f}")
-    print(f"  Bottom 20% of segments: avg Strategy Sharpe {bot5_sharpe[f'{STRATEGY_PREFIX}Sharpe'].mean():.3f}")
+    print(
+        f"  Top 20% of segments (by Sharpe): avg Strategy Sharpe {top5_sharpe[f'{STRATEGY_PREFIX}Sharpe'].mean():.3f}"
+    )
+    print(
+        f"  Bottom 20% of segments: avg Strategy Sharpe {bot5_sharpe[f'{STRATEGY_PREFIX}Sharpe'].mean():.3f}"
+    )
     sharpe_std = df[f"{STRATEGY_PREFIX}Sharpe"].std()
     print(f"  Std of segment Sharpes: {sharpe_std:.3f} (high = unstable)")
 
@@ -135,12 +183,18 @@ def main(loader=None) -> None:
                 dom = "Unknown"
             seg_regimes.append(dom)
         df["dominant_regime"] = seg_regimes
-        by_regime = df.groupby("dominant_regime").agg({
-            f"{STRATEGY_PREFIX}Sharpe": "mean",
-            f"{STRATEGY_PREFIX}CAGR": "mean",
-            "SPY_Sharpe": "mean",
-            "SPY_CAGR": "mean",
-        }).round(4)
+        by_regime = (
+            df.groupby("dominant_regime")
+            .agg(
+                {
+                    f"{STRATEGY_PREFIX}Sharpe": "mean",
+                    f"{STRATEGY_PREFIX}CAGR": "mean",
+                    "SPY_Sharpe": "mean",
+                    "SPY_CAGR": "mean",
+                }
+            )
+            .round(4)
+        )
         by_regime["n_segments"] = df.groupby("dominant_regime").size()
         print(by_regime.to_string())
     else:
@@ -184,6 +238,7 @@ if __name__ == "__main__":
         def _load_from_arg() -> pd.DataFrame:
             df = pd.read_csv(args.results_csv)
             return df[df["segment"] != "OVERALL"].copy()
+
         main(loader=_load_from_arg)
     else:
         main()

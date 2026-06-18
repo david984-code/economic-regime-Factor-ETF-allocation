@@ -46,7 +46,9 @@ def _load_submission_config() -> dict[str, Any]:
         raise ValueError("paper_only must be true; live trading is not supported")
     port = int(raw.get("port", PAPER_PORT))
     if port != PAPER_PORT:
-        logger.warning("Config port %s is not paper port %s; submission may be disabled", port, PAPER_PORT)
+        logger.warning(
+            "Config port %s is not paper port %s; submission may be disabled", port, PAPER_PORT
+        )
     return raw
 
 
@@ -65,7 +67,9 @@ def submit_paper_orders(
         from ib_insync.contract import Stock
         from ib_insync.order import OrderStatus
     except ImportError as e:
-        raise ImportError("ib_insync required for order submission. Install with: uv add ib-insync") from e
+        raise ImportError(
+            "ib_insync required for order submission. Install with: uv add ib-insync"
+        ) from e
 
     config = _load_submission_config()
     host = config.get("host", "127.0.0.1")
@@ -78,7 +82,9 @@ def submit_paper_orders(
     ib = IB()
     try:
         # Non-readonly connection required for order placement (paper only)
-        ib.connect(host=host, port=port, clientId=client_id, timeout=10, readonly=False, account=acc)
+        ib.connect(
+            host=host, port=port, clientId=client_id, timeout=10, readonly=False, account=acc
+        )
     except Exception as e:
         logger.exception("Failed to connect to IB Gateway for order submission: %s", e)
         raise ConnectionError(f"Cannot connect to IB Gateway at {host}:{port}: {e}") from e
@@ -89,8 +95,13 @@ def submit_paper_orders(
         for i, o in enumerate(proposed_orders):
             symbol = getattr(o, "symbol", None) or (o.get("symbol") if isinstance(o, dict) else "")
             side = getattr(o, "side", None) or (o.get("side") if isinstance(o, dict) else "")
-            shares = int(getattr(o, "shares", 0) or (o.get("shares", 0) if isinstance(o, dict) else 0))
-            price_used = float(getattr(o, "price_used", 0) or (o.get("price_used", 0) if isinstance(o, dict) else 0))
+            shares = int(
+                getattr(o, "shares", 0) or (o.get("shares", 0) if isinstance(o, dict) else 0)
+            )
+            price_used = float(
+                getattr(o, "price_used", 0)
+                or (o.get("price_used", 0) if isinstance(o, dict) else 0)
+            )
             if not symbol or shares <= 0:
                 logger.warning("Skipping invalid order row: symbol=%s shares=%s", symbol, shares)
                 continue
@@ -111,7 +122,11 @@ def submit_paper_orders(
                 perm_id = getattr(trade.order, "permId", 0) or 0
                 logger.info(
                     "Submitted paper order: symbol=%s side=%s shares=%s orderId=%s status=%s",
-                    symbol, action, shares, order_id, status,
+                    symbol,
+                    action,
+                    shares,
+                    order_id,
+                    status,
                 )
                 results.append(
                     SubmittedOrderResult(
@@ -125,7 +140,9 @@ def submit_paper_orders(
                     )
                 )
             except Exception as e:
-                logger.exception("Failed to place order for %s %s %s: %s", action, shares, symbol, e)
+                logger.exception(
+                    "Failed to place order for %s %s %s: %s", action, shares, symbol, e
+                )
                 results.append(
                     SubmittedOrderResult(
                         symbol=symbol,

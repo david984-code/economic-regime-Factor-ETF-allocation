@@ -15,7 +15,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterable
 
-from src.execution.create_orders import OrderPreviewRow, RebalancePreview, validate_target_weights_for_execution
+from src.execution.create_orders import (
+    OrderPreviewRow,
+    RebalancePreview,
+    validate_target_weights_for_execution,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +63,9 @@ def pre_trade_checks(
             "Submission refused: trading_enabled is false in config. Set to true to allow paper submission."
         )
     if not paper_only:
-        raise ValueError("Submission refused: paper_only must be true. Live trading is not supported.")
+        raise ValueError(
+            "Submission refused: paper_only must be true. Live trading is not supported."
+        )
     if preview.symbols_missing_price:
         raise ValueError(
             "Submission refused: missing prices for "
@@ -125,7 +131,9 @@ def duplicate_run_refuse(marker_path: Path) -> bool:
     return int(data.get("submitted_order_count", 0) or 0) > 0
 
 
-def write_submission_marker(marker_path: Path, *, run_id: str, submitted_order_count: int, dry_run: bool) -> None:
+def write_submission_marker(
+    marker_path: Path, *, run_id: str, submitted_order_count: int, dry_run: bool
+) -> None:
     marker_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "date": datetime.now(UTC).strftime("%Y-%m-%d"),
@@ -135,4 +143,3 @@ def write_submission_marker(marker_path: Path, *, run_id: str, submitted_order_c
     }
     marker_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     logger.info("Wrote submission marker: %s", marker_path)
-

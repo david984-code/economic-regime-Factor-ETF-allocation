@@ -47,11 +47,7 @@ def compute_metrics(
 
     cagr = float(equity_curve.iloc[-1] ** (1 / years) - 1)
     volatility = float(rets.std() * np.sqrt(252))
-    sharpe = (
-        (mean_daily / std_daily) * np.sqrt(252)
-        if std_daily != 0
-        else float("nan")
-    )
+    sharpe = (mean_daily / std_daily) * np.sqrt(252) if std_daily != 0 else float("nan")
 
     drawdown = equity_curve / equity_curve.cummax() - 1
     max_dd = float(drawdown.min())
@@ -132,7 +128,7 @@ def compute_full_metrics(
 
     # -- Ulcer Index: RMS of all drawdown depths (%) ---------------------------
     dd_pct = (equity_curve / equity_curve.cummax() - 1) * 100
-    out["Ulcer_Index"] = float(np.sqrt((dd_pct ** 2).mean()))
+    out["Ulcer_Index"] = float(np.sqrt((dd_pct**2).mean()))
 
     # -- CVaR 5%: mean loss on worst 5% of days --------------------------------
     q05 = rets.quantile(0.05)

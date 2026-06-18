@@ -45,9 +45,8 @@ def fetch_prices(
     e = end or get_end_date()
 
     from src.utils.retry import external_api_retry
-    raw = external_api_retry()(yf.download)(
-        syms, start=s, end=e, progress=False, auto_adjust=False
-    )
+
+    raw = external_api_retry()(yf.download)(syms, start=s, end=e, progress=False, auto_adjust=False)
     prices = _extract_close_prices(raw)
     if isinstance(prices.columns, pd.MultiIndex):
         prices.columns = prices.columns.get_level_values(0)

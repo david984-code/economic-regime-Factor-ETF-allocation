@@ -20,6 +20,7 @@ unchanged.
 Usage:
     python scripts/generate_vintage_regime_labels.py [--start 2010-01] [--end 2026-05] [--no-cache]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -76,6 +77,7 @@ def classify_at_asof(
     to as_of -- this is genuinely not lookahead-tainted because Treasury
     yields are not revised after the day they are observed.
     """
+
     def _vintage_or_fallback(
         vintage_dict: dict[str, pd.DataFrame],
         key: str,
@@ -88,8 +90,8 @@ def classify_at_asof(
     gdp = _vintage_or_fallback(vintage_core, "gdp")
     cpi = _vintage_or_fallback(vintage_core, "cpi")
     y10 = _vintage_or_fallback(vintage_core, "yield_10y")
-    y3  = _vintage_or_fallback(vintage_core, "yield_3m")
-    m2  = _vintage_or_fallback(vintage_core, "m2")
+    y3 = _vintage_or_fallback(vintage_core, "yield_3m")
+    m2 = _vintage_or_fallback(vintage_core, "m2")
     vel = _vintage_or_fallback(vintage_core, "velocity")
 
     pmi = _vintage_or_fallback(vintage_opt, "pmi")
@@ -106,13 +108,15 @@ def classify_at_asof(
     if gdp_m.empty or cpi_m.empty or m2_m.empty:
         return None
 
-    df = pd.DataFrame({
-        "gdp_mom": _yoy(gdp_m),
-        "cpi_mom": _yoy(cpi_m, periods=12),
-        "m2_mom":  _yoy(m2_m, periods=12),
-        "vel_mom": _yoy(vel_m, periods=4),  # M2V is quarterly
-        "yield_curve": (y10_m - y3_m),
-    })
+    df = pd.DataFrame(
+        {
+            "gdp_mom": _yoy(gdp_m),
+            "cpi_mom": _yoy(cpi_m, periods=12),
+            "m2_mom": _yoy(m2_m, periods=12),
+            "vel_mom": _yoy(vel_m, periods=4),  # M2V is quarterly
+            "yield_curve": (y10_m - y3_m),
+        }
+    )
     if not pmi.empty:
         df["pmi_mom"] = _yoy(_resample_monthly(pmi), periods=12)
     if not claims.empty:
@@ -122,8 +126,9 @@ def classify_at_asof(
 
     df = df.dropna(how="all")
     if len(df) < 30:
-        logger.debug("  as_of=%s: only %d rows after dropna(how=all); skipping",
-                     as_of.date(), len(df))
+        logger.debug(
+            "  as_of=%s: only %d rows after dropna(how=all); skipping", as_of.date(), len(df)
+        )
         return None
 
     # Forward-fill across the joined index. Each indicator only updates on its
@@ -143,8 +148,12 @@ def classify_at_asof(
     latest = eligible.iloc[-1]
 
     if pd.isna(latest.get("gdp_z")) or pd.isna(latest.get("infl_z")):
-        logger.debug("  as_of=%s: gdp_z=%s infl_z=%s; skipping",
-                     as_of.date(), latest.get("gdp_z"), latest.get("infl_z"))
+        logger.debug(
+            "  as_of=%s: gdp_z=%s infl_z=%s; skipping",
+            as_of.date(),
+            latest.get("gdp_z"),
+            latest.get("infl_z"),
+        )
         return None
 
     # Production scoring: blend the available z-scores into a risk_on logit,
@@ -187,10 +196,9 @@ def main() -> int:
         logger.error("FRED_API_KEY not set. Add to .env or environment.")
         return 1
 
-    logger.info("Fetching ALFRED vintage release histories (cached: %s)...",
-                not args.no_cache)
+    logger.info("Fetching ALFRED vintage release histories (cached: %s)...", not args.no_cache)
     vintage_core = fetch_vintage_core(api_key, use_cache=not args.no_cache)
-    vintage_opt  = fetch_vintage_optional(api_key, use_cache=not args.no_cache)
+    vintage_opt = fetch_vintage_optional(api_key, use_cache=not args.no_cache)
     logger.info("  vintage core: %s", list(vintage_core.keys()))
     logger.info("  vintage opt : %s", list(vintage_opt.keys()))
 
@@ -200,11 +208,16 @@ def main() -> int:
     # them does not introduce lookahead.
     logger.info("Fetching non-revised fallback series (latest FRED) ...")
     from src.data.fred_ingestion import fetch_fred_core, fetch_fred_optional
+
     gdp_l, cpi_l, y10_l, y3_l, m2_l, vel_l = fetch_fred_core(api_key)
     opt_l = fetch_fred_optional(api_key)
     latest_fallback = {
-        "gdp": gdp_l, "cpi": cpi_l, "yield_10y": y10_l, "yield_3m": y3_l,
-        "m2": m2_l, "velocity": vel_l,
+        "gdp": gdp_l,
+        "cpi": cpi_l,
+        "yield_10y": y10_l,
+        "yield_3m": y3_l,
+        "m2": m2_l,
+        "velocity": vel_l,
         **{k: v for k, v in opt_l.items()},
     }
 
@@ -229,8 +242,12 @@ def main() -> int:
 
     out_df = pd.DataFrame(rows).set_index("date")
     out_df.to_csv(args.out)
-    logger.info("Wrote %d vintage labels to %s (skipped %d insufficient-data months)",
-                len(out_df), args.out, skipped)
+    logger.info(
+        "Wrote %d vintage labels to %s (skipped %d insufficient-data months)",
+        len(out_df),
+        args.out,
+        skipped,
+    )
 
     # Summary
     print()

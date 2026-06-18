@@ -66,7 +66,9 @@ class PipelineData:
         self._prices = prices.copy()
         self._fetch_time_sec = 0.0
         self._source = "injected"
-        logger.debug("[DATA] Injected prices: %d tickers, %d rows", len(prices.columns), len(prices))
+        logger.debug(
+            "[DATA] Injected prices: %d tickers, %d rows", len(prices.columns), len(prices)
+        )
 
     def get_monthly_returns(self) -> pd.DataFrame:
         """Return monthly returns (month-end). Same logic as fetch_monthly_returns."""

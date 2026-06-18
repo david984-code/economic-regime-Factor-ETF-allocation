@@ -26,7 +26,7 @@ def get_cached(name: str, params: dict[str, Any]) -> Any | None:
     """Retrieve cached result if available."""
     key = _cache_key(name, params)
     cache_file = CACHE_DIR / f"{key}.pkl"
-    
+
     if cache_file.exists():
         try:
             with open(cache_file, "rb") as f:
@@ -34,7 +34,7 @@ def get_cached(name: str, params: dict[str, Any]) -> Any | None:
         except Exception:
             # Cache corrupted, ignore
             return None
-    
+
     return None
 
 
@@ -42,7 +42,7 @@ def set_cached(name: str, params: dict[str, Any], result: Any):
     """Store result in cache."""
     key = _cache_key(name, params)
     cache_file = CACHE_DIR / f"{key}.pkl"
-    
+
     try:
         with open(cache_file, "wb") as f:
             pickle.dump(result, f)

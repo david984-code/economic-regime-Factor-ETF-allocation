@@ -64,7 +64,12 @@ def _metrics_row(
     """Build metrics dict for one series."""
     rets = rets.dropna()
     if len(rets) < 5:
-        return {f"{name}_CAGR": np.nan, f"{name}_Sharpe": np.nan, f"{name}_MaxDD": np.nan, f"{name}_Vol": np.nan}
+        return {
+            f"{name}_CAGR": np.nan,
+            f"{name}_Sharpe": np.nan,
+            f"{name}_MaxDD": np.nan,
+            f"{name}_Vol": np.nan,
+        }
     m = compute_metrics(rets, rf_daily=CASH_DAILY_YIELD, bench_rets=bench_rets)
     row = {
         f"{name}_CAGR": m["CAGR"],
@@ -249,9 +254,7 @@ def _run_walk_forward_segment_loop(
     resolved_start = start or START_DATE
     resolved_end = end or get_end_date()
     if fast_mode and resolved_start == START_DATE:
-        resolved_start = (
-            pd.Timestamp(resolved_end) - pd.DateOffset(years=8)
-        ).strftime("%Y-%m-%d")
+        resolved_start = (pd.Timestamp(resolved_end) - pd.DateOffset(years=8)).strftime("%Y-%m-%d")
         logger.info(
             "[FAST MODE] Using recent data only: %s to %s",
             resolved_start,
@@ -272,20 +275,14 @@ def _run_walk_forward_segment_loop(
 
     if timing:
         with timing.time("fetch_prices"):
-            prices = fetch_prices(
-                tickers=tickers_to_use, start=resolved_start, end=resolved_end
-            )
+            prices = fetch_prices(tickers=tickers_to_use, start=resolved_start, end=resolved_end)
     else:
-        prices = fetch_prices(
-            tickers=tickers_to_use, start=resolved_start, end=resolved_end
-        )
+        prices = fetch_prices(tickers=tickers_to_use, start=resolved_start, end=resolved_end)
 
     breadth_prices: pd.DataFrame | None = None
     if breadth_weight > 0.0 or breadth_flag_offset > 0.0:
         sector_etfs = ["XLB", "XLE", "XLF", "XLI", "XLK", "XLP", "XLU", "XLV", "XLY"]
-        breadth_prices = fetch_prices(
-            tickers=sector_etfs, start=resolved_start, end=resolved_end
-        )
+        breadth_prices = fetch_prices(tickers=sector_etfs, start=resolved_start, end=resolved_end)
 
     yield_curve_data: pd.Series | None = None
     if yield_curve_weight > 0.0 or inversion_flag_offset > 0.0:
@@ -300,9 +297,7 @@ def _run_walk_forward_segment_loop(
         with timing.time("load_regime_labels"):
             csv_path = OUTPUTS_DIR / "regime_labels_expanded.csv"
             if csv_path.exists():
-                regime_df = pd.read_csv(
-                    csv_path, parse_dates=["date"], index_col="date"
-                )
+                regime_df = pd.read_csv(csv_path, parse_dates=["date"], index_col="date")
             else:
                 from src.allocation.optimizer import load_regimes
 
@@ -362,18 +357,14 @@ def _run_walk_forward_segment_loop(
                 train_returns = train_returns.loc[train_start:train_end]
                 if "cash" not in train_returns.columns:
                     train_returns["cash"] = RF_MONTHLY
-                train_regimes = regime_df.loc[:train_end].resample("ME").last().dropna(
-                    how="all"
-                )
+                train_regimes = regime_df.loc[:train_end].resample("ME").last().dropna(how="all")
                 train_regimes = train_regimes.loc[train_regimes.index <= train_end]
         else:
             train_returns = prices.resample("ME").last().pct_change().dropna()
             train_returns = train_returns.loc[train_start:train_end]
             if "cash" not in train_returns.columns:
                 train_returns["cash"] = RF_MONTHLY
-            train_regimes = regime_df.loc[:train_end].resample("ME").last().dropna(
-                how="all"
-            )
+            train_regimes = regime_df.loc[:train_end].resample("ME").last().dropna(how="all")
             train_regimes = train_regimes.loc[train_regimes.index <= train_end]
 
         if len(train_returns) < 24 or len(train_regimes) < 12:
@@ -389,23 +380,17 @@ def _run_walk_forward_segment_loop(
             if allocations is None:
                 if timing:
                     with timing.time("segment_optimization"):
-                        allocations = optimize_allocations_from_data(
-                            train_returns, train_regimes
-                        )
+                        allocations = optimize_allocations_from_data(train_returns, train_regimes)
                         set_cached("allocations", opt_params, allocations)
                 else:
-                    allocations = optimize_allocations_from_data(
-                        train_returns, train_regimes
-                    )
+                    allocations = optimize_allocations_from_data(train_returns, train_regimes)
                     set_cached("allocations", opt_params, allocations)
             elif timing:
                 timing.add("segment_optimization_cached", 0)
         else:
             if timing:
                 with timing.time("segment_optimization"):
-                    allocations = optimize_allocations_from_data(
-                        train_returns, train_regimes
-                    )
+                    allocations = optimize_allocations_from_data(train_returns, train_regimes)
             else:
                 allocations = optimize_allocations_from_data(train_returns, train_regimes)
 
@@ -469,9 +454,7 @@ def _run_walk_forward_segment_loop(
         if not collect_metrics_rows:
             continue
 
-        test_bench = {
-            k: v.loc[test_start:test_end].dropna() for k, v in benchmarks.items()
-        }
+        test_bench = {k: v.loc[test_start:test_end].dropna() for k, v in benchmarks.items()}
         bench_spy = test_bench.get("SPY") if "SPY" in test_bench else None
         w = strat_weights.loc[test_start:test_end] if strat_weights is not None else None
         row: dict = {
@@ -484,15 +467,11 @@ def _run_walk_forward_segment_loop(
 
         if timing:
             with timing.time("segment_metrics"):
-                row.update(
-                    _metrics_row("Strategy", test_rets, bench_rets=bench_spy, weights=w)
-                )
+                row.update(_metrics_row("Strategy", test_rets, bench_rets=bench_spy, weights=w))
                 for bname, bret in test_bench.items():
                     row.update(_metrics_row(bname, bret))
         else:
-            row.update(
-                _metrics_row("Strategy", test_rets, bench_rets=bench_spy, weights=w)
-            )
+            row.update(_metrics_row("Strategy", test_rets, bench_rets=bench_spy, weights=w))
             for bname, bret in test_bench.items():
                 row.update(_metrics_row(bname, bret))
 
@@ -752,6 +731,7 @@ def run_walk_forward_evaluation(
         df.to_csv(run_csv_path, index=False)
 
         from src.evaluation.model_results_db import persist_walk_forward_run
+
         persist_walk_forward_run(
             run_id,
             df,

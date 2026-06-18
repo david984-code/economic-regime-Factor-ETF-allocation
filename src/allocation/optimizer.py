@@ -41,9 +41,7 @@ def load_regimes() -> pd.DataFrame:
         db.close()
         path = OUTPUTS_DIR / "regime_labels_expanded.csv"
         if not path.exists():
-            raise FileNotFoundError(
-                "No regime data found. Run regime classification first."
-            )
+            raise FileNotFoundError("No regime data found. Run regime classification first.")
         return pd.read_csv(path, parse_dates=["date"], index_col="date")
 
 
@@ -84,9 +82,7 @@ def _get_constraints(
       - Per-asset min/max floors and caps
       - Min aggregate risk-on sleeve weight (Recovery/Overheating)
     """
-    min_cash, max_cash = REGIME_CASH.get(
-        regime, (DEFAULT_MIN_CASH, DEFAULT_MAX_CASH)
-    )
+    min_cash, max_cash = REGIME_CASH.get(regime, (DEFAULT_MIN_CASH, DEFAULT_MAX_CASH))
     constraints: list[dict[str, Any]] = [
         {"type": "eq", "fun": lambda w: np.sum(w) - 1},
         {"type": "ineq", "fun": lambda w, mc=min_cash: w[-1] - mc},
@@ -98,43 +94,45 @@ def _get_constraints(
     for asset, min_w in min_assets.items():
         if asset in asset_list:
             idx = asset_list.index(asset)
-            constraints.append({
-                "type": "ineq",
-                "fun": lambda w, i=idx, m=min_w: w[i] - m,
-            })
+            constraints.append(
+                {
+                    "type": "ineq",
+                    "fun": lambda w, i=idx, m=min_w: w[i] - m,
+                }
+            )
 
     # Per-asset maximum caps (prevent gold/bond concentration in risk-on regimes)
     max_assets = REGIME_MAX_ASSETS.get(regime, {})
     for asset, max_w in max_assets.items():
         if asset in asset_list:
             idx = asset_list.index(asset)
-            constraints.append({
-                "type": "ineq",
-                "fun": lambda w, i=idx, m=max_w: m - w[i],
-            })
+            constraints.append(
+                {
+                    "type": "ineq",
+                    "fun": lambda w, i=idx, m=max_w: m - w[i],
+                }
+            )
 
     # Min aggregate risk-on sleeve weight
-    risk_on_indices = [
-        asset_list.index(a) for a in RISK_ON_ASSETS_BASE if a in asset_list
-    ]
+    risk_on_indices = [asset_list.index(a) for a in RISK_ON_ASSETS_BASE if a in asset_list]
     min_risk_on = REGIME_MIN_RISK_ON.get(regime)
     if min_risk_on is not None:
-        constraints.append({
-            "type": "ineq",
-            "fun": lambda w, idxs=risk_on_indices, m=min_risk_on: (
-                sum(w[i] for i in idxs) - m
-            ),
-        })
+        constraints.append(
+            {
+                "type": "ineq",
+                "fun": lambda w, idxs=risk_on_indices, m=min_risk_on: sum(w[i] for i in idxs) - m,
+            }
+        )
 
     # Max aggregate risk-on sleeve weight (defensive regimes)
     max_risk_on = REGIME_MAX_RISK_ON.get(regime)
     if max_risk_on is not None:
-        constraints.append({
-            "type": "ineq",
-            "fun": lambda w, idxs=risk_on_indices, m=max_risk_on: (
-                m - sum(w[i] for i in idxs)
-            ),
-        })
+        constraints.append(
+            {
+                "type": "ineq",
+                "fun": lambda w, idxs=risk_on_indices, m=max_risk_on: m - sum(w[i] for i in idxs),
+            }
+        )
 
     return constraints
 
@@ -180,9 +178,7 @@ def optimize_allocations_from_data(
             continue
         returns_risky = subset_risky.values.astype(float)
         n = len(full_asset_list)
-        min_cash, max_cash = REGIME_CASH.get(
-            regime, (DEFAULT_MIN_CASH, DEFAULT_MAX_CASH)
-        )
+        min_cash, max_cash = REGIME_CASH.get(regime, (DEFAULT_MIN_CASH, DEFAULT_MAX_CASH))
         init_guess = np.full(n, 0.0)
         start_cash = (min_cash + max_cash) / 2
         init_guess[:-1] = (1 - start_cash) / (n - 1)
@@ -242,9 +238,7 @@ def run_optimizer(pipeline_data: "PipelineData | None" = None) -> None:
 
         returns_risky = subset_risky.values.astype(float)
         n = len(full_asset_list)
-        min_cash, max_cash = REGIME_CASH.get(
-            regime, (DEFAULT_MIN_CASH, DEFAULT_MAX_CASH)
-        )
+        min_cash, max_cash = REGIME_CASH.get(regime, (DEFAULT_MIN_CASH, DEFAULT_MAX_CASH))
 
         init_guess = np.full(n, 0.0)
         start_cash = (min_cash + max_cash) / 2
@@ -278,6 +272,7 @@ def run_optimizer(pipeline_data: "PipelineData | None" = None) -> None:
         logger.info("Saved optimal allocations")
 
         from src.allocation.format_allocations import format_allocations_to_excel
+
         format_allocations_to_excel()
     else:
         logger.warning("No successful optimizations")

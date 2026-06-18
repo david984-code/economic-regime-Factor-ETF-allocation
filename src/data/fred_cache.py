@@ -71,6 +71,7 @@ def fetch_series_with_cache(
         fetch_start = (pd.Timestamp(cached_max_str) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
         try:
             from src.utils.retry import external_api_retry
+
             new_data = external_api_retry()(fred.get_series)(
                 series_id,
                 observation_start=fetch_start,
@@ -91,9 +92,14 @@ def fetch_series_with_cache(
             )
             return combined, "api_incremental"
         except Exception as e:
-            logger.warning("[FRED cache] Incremental fetch failed for %s: %s. Falling back to full fetch.", series_id, e)
+            logger.warning(
+                "[FRED cache] Incremental fetch failed for %s: %s. Falling back to full fetch.",
+                series_id,
+                e,
+            )
 
     from src.utils.retry import external_api_retry
+
     s = external_api_retry()(fred.get_series)(series_id, observation_end=end_date)
     s.index = pd.to_datetime(s.index)
     if use_cache:

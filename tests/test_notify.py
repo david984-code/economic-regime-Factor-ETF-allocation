@@ -36,9 +36,7 @@ def mock_db(tmp_path: Path) -> Path:
             benchmark_sharpe REAL, benchmark_max_drawdown REAL
         )
     """)
-    conn.execute(
-        "INSERT INTO regime_labels VALUES ('2026-03-31', 'Recovery', 0.72)"
-    )
+    conn.execute("INSERT INTO regime_labels VALUES ('2026-03-31', 'Recovery', 0.72)")
     allocations = [
         ("Recovery", "SPY", 0.28),
         ("Recovery", "MTUM", 0.18),
@@ -49,9 +47,7 @@ def mock_db(tmp_path: Path) -> Path:
         ("Recovery", "USMV", 0.05),
         ("Recovery", "cash", 0.05),
     ]
-    conn.executemany(
-        "INSERT INTO optimal_allocations VALUES (?, ?, ?)", allocations
-    )
+    conn.executemany("INSERT INTO optimal_allocations VALUES (?, ?, ?)", allocations)
     conn.execute(
         "INSERT INTO backtest_results "
         "(portfolio_cagr, portfolio_volatility, portfolio_sharpe, portfolio_max_drawdown, "

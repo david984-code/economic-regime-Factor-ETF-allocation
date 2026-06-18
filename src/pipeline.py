@@ -33,9 +33,7 @@ def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
     load_dotenv()
     api_key = get_fred_api_key()
     if not api_key:
-        logger.error(
-            "FRED API key not found. Set FRED_API_KEY or FRED_API_KEY_FILE (see README)."
-        )
+        logger.error("FRED API key not found. Set FRED_API_KEY or FRED_API_KEY_FILE (see README).")
         return 1
 
     start = datetime.now()
@@ -53,12 +51,15 @@ def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
     logger.info("\n[STEP] Regime classification")
     try:
         from src.data.fred_ingestion import get_fred_cache_stats
+
         t0 = time.perf_counter()
         _run_regime_classification(api_key)
         timings["regime_classification"] = time.perf_counter() - t0
         fred_hits, fred_misses = get_fred_cache_stats()
         logger.info("[FRED] Cache stats: %d hits, %d misses", fred_hits, fred_misses)
-        logger.info("[OK] Completed: Regime classification (%.2fs)", timings["regime_classification"])
+        logger.info(
+            "[OK] Completed: Regime classification (%.2fs)", timings["regime_classification"]
+        )
     except Exception as e:
         logger.exception("[FAIL] Regime classification: %s", e)
         return 1
@@ -107,6 +108,7 @@ def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
     try:
         t0 = time.perf_counter()
         from src.execution.auto_rebalance import run_auto_rebalance
+
         rebal_result = run_auto_rebalance()
         timings["auto_rebalance"] = time.perf_counter() - t0
         logger.info(
@@ -122,6 +124,7 @@ def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
     try:
         t0 = time.perf_counter()
         from src.daily_report import send_daily_report
+
         send_daily_report()
         timings["daily_report"] = time.perf_counter() - t0
         logger.info("[OK] Completed: Daily report (%.2fs)", timings["daily_report"])
@@ -132,26 +135,39 @@ def run_daily_pipeline(cli_tickers: list[str] | None = None) -> int:
     logger.info("\n" + "=" * 80)
     logger.info("SUMMARY: All steps completed in %.1fs", elapsed)
     logger.info("TIMING BY STEP:")
-    for k in ["data_fetch", "regime_classification", "optimizer", "backtest", "auto_rebalance", "daily_report"]:
+    for k in [
+        "data_fetch",
+        "regime_classification",
+        "optimizer",
+        "backtest",
+        "auto_rebalance",
+        "daily_report",
+    ]:
         if k in timings:
             logger.info("  %s: %.2fs", k, timings[k])
-    logger.info("SUMMARY: Market data fetched once in %.2fs (3 steps reused cache)", timings.get("data_fetch", 0))
+    logger.info(
+        "SUMMARY: Market data fetched once in %.2fs (3 steps reused cache)",
+        timings.get("data_fetch", 0),
+    )
     logger.info("=" * 80)
     return 0
 
 
 def _run_regime_classification(api_key: str) -> None:
     from src.models.regime_classifier import RegimeClassifier
+
     RegimeClassifier(api_key).run()
 
 
 def _run_optimizer(pipeline_data: PipelineData) -> None:
     from src.allocation.optimizer import run_optimizer
+
     run_optimizer(pipeline_data=pipeline_data)
 
 
 def _run_backtest(pipeline_data: PipelineData) -> None:
     from src.backtest.engine import run_backtest
+
     run_backtest(pipeline_data=pipeline_data)
 
 

@@ -55,7 +55,7 @@ TICKERS_EXPANDED = TICKERS + [
     "XLY",  # Consumer Discretionary
     "XLU",  # Utilities
     "XLB",  # Materials
-    "XLRE", # Real Estate
+    "XLRE",  # Real Estate
     "XLC",  # Communication Services
 ]
 ASSETS_EXPANDED = TICKERS_EXPANDED + ["cash"]
@@ -66,7 +66,17 @@ RISK_OFF_ASSETS_BASE = ["IEF", "TLT", "GLD"]
 
 # Sleeve definitions for expanded universe (sector ETFs)
 RISK_ON_ASSETS_EXPANDED = RISK_ON_ASSETS_BASE + [
-    "XLK", "XLF", "XLE", "XLV", "XLI", "XLP", "XLY", "XLU", "XLB", "XLRE", "XLC"
+    "XLK",
+    "XLF",
+    "XLE",
+    "XLV",
+    "XLI",
+    "XLP",
+    "XLY",
+    "XLU",
+    "XLB",
+    "XLRE",
+    "XLC",
 ]
 RISK_OFF_ASSETS_EXPANDED = RISK_OFF_ASSETS_BASE  # Same defensive assets
 

@@ -34,8 +34,7 @@ def _get_twilio_config() -> dict[str, str]:
         config[k] = val
     if missing:
         raise OSError(
-            f"Missing Twilio env vars: {', '.join(missing)}. "
-            "Set them in .env or environment."
+            f"Missing Twilio env vars: {', '.join(missing)}. Set them in .env or environment."
         )
     return config
 
@@ -73,9 +72,7 @@ def build_sms_body() -> str:
         if bt:
             p = bt["portfolio"]
             metrics_str = (
-                f"Sharpe:{p['Sharpe']:.2f} "
-                f"CAGR:{p['CAGR']:.1%} "
-                f"DD:{p['Max Drawdown']:.1%}"
+                f"Sharpe:{p['Sharpe']:.2f} CAGR:{p['CAGR']:.1%} DD:{p['Max Drawdown']:.1%}"
             )
         else:
             metrics_str = "No backtest"

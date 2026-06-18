@@ -10,11 +10,10 @@ client_id: 1
 reconciliation_client_id: 2   # Use different client_id for read-after-write to avoid "client id already in use"
 # Paper account — set via IBKR_ACCOUNT env var (do not hardcode here)
 account: ""
-# Set to false to force dry-run on the next scheduled monthly fire. Flip
-# back to true after reviewing outputs/rebalance/reports/ from the first
-# scheduled fire to enable live paper-order submission. Was true prior
-# to 2026-05-31 when scheduler automation was wired up.
-trading_enabled: false   # Must be true in config to allow --submit-paper-orders
+# First scheduled fire (Jun 1 2026) dry-ran successfully; reviewed
+# outputs/rebalance/reports/rebalance_summary_20260602_215729.txt and
+# flipped back to true on Jun 2 2026 to enable live paper-order submission.
+trading_enabled: true    # Must be true in config to allow --submit-paper-orders
 dry_run: true
 paper_only: true         # Must be true; live trading unsupported
 

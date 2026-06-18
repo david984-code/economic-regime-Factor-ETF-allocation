@@ -104,7 +104,10 @@ def fetch_post_trade_positions_and_nav(
     if client_id_override is not None:
         base = _load_paper_config()
         config = {**base, "client_id": client_id_override}
-        logger.info("Using client_id=%s for post-trade fetch (avoid collision with submission session)", client_id_override)
+        logger.info(
+            "Using client_id=%s for post-trade fetch (avoid collision with submission session)",
+            client_id_override,
+        )
     adapter = IBKRPaperAdapter(config=config)
     try:
         adapter.connect()
@@ -117,10 +120,13 @@ def fetch_post_trade_positions_and_nav(
         portfolio = adapter.get_portfolio()
         rows = _portfolio_to_position_rows(portfolio)
         if nav <= 0:
-            nav = sum(
-                (p.market_value if p.market_value is not None else p.position * p.avg_cost)
-                for p in rows
-            ) or 1.0
+            nav = (
+                sum(
+                    (p.market_value if p.market_value is not None else p.position * p.avg_cost)
+                    for p in rows
+                )
+                or 1.0
+            )
         return rows, nav
     finally:
         adapter.disconnect()
@@ -143,7 +149,9 @@ def run_reconciliation(
     executed_weights = positions_to_current_weights(positions, nav)
     # Align keys
     all_symbols = set(target_weights) | set(executed_weights)
-    weight_delta = {s: (target_weights.get(s, 0.0) - executed_weights.get(s, 0.0)) for s in all_symbols}
+    weight_delta = {
+        s: (target_weights.get(s, 0.0) - executed_weights.get(s, 0.0)) for s in all_symbols
+    }
     max_abs_delta = max(abs(d) for d in weight_delta.values()) if weight_delta else 0.0
     run_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     report = ReconciliationReport(

@@ -121,11 +121,7 @@ def build_macro_dataframe(
     Forward-fills quarterly series (GDP, velocity) so that months between
     releases carry the last known value instead of producing NaN.
     """
-    all_dates = (
-        gdp.index.union(cpi.index)
-        .union(yield_10y.index)
-        .union(m2.index)
-    )
+    all_dates = gdp.index.union(cpi.index).union(yield_10y.index).union(m2.index)
     if len(all_dates) > 0:
         gdp = gdp.reindex(all_dates).ffill()
         velocity = velocity.reindex(all_dates).ffill()

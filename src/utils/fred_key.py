@@ -38,14 +38,10 @@ def validate_fred_key_format(key: str | None) -> None:
         raise ValueError("FRED_API_KEY is a placeholder, not a real key")
 
     if len(normalized) != 32:
-        raise ValueError(
-            f"FRED_API_KEY must be exactly 32 characters (got {len(normalized)})"
-        )
+        raise ValueError(f"FRED_API_KEY must be exactly 32 characters (got {len(normalized)})")
 
     if not _HEX32_RE.match(normalized):
-        logging.warning(
-            "FRED_API_KEY does not match expected lowercase hex format (32 chars)"
-        )
+        logging.warning("FRED_API_KEY does not match expected lowercase hex format (32 chars)")
 
 
 def get_fred_api_key() -> str | None:
